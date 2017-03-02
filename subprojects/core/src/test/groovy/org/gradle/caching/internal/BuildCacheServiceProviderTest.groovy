@@ -51,7 +51,7 @@ class BuildCacheServiceProviderTest extends Specification {
         getRemote() >> { remote }
     }
     def buildOperationExecuter = Mock(BuildOperationExecutor)
-    def provider = new BuildCacheServiceProvider(buildCacheConfiguration, startParameter, instantiator, buildOperationExecuter) {
+    def provider = new BuildCacheServiceProvider(buildCacheConfiguration, startParameter, instantiator, buildOperationExecuter, temporaryFileProvider) {
         BuildCacheService createDecoratedBuildCacheService(BuildCache buildCache) {
             sensedBuildCaches += buildCache
             buildCacheService
