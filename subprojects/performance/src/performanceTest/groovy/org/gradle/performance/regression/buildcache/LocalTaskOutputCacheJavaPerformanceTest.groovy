@@ -48,6 +48,15 @@ class LocalTaskOutputCacheJavaPerformanceTest extends AbstractTaskOutputCacheJav
                             System.setProperty('org.gradle.cache.tasks.directory', '${cacheDir.absolutePath}')
                         }
                     """.stripIndent()
+                    def buildFile = new TestFile(invocationInfo.getProjectDir()).file('build.gradle')
+                    buildFile << """
+                        allprojects {
+                            tasks.withType(AbstractArchiveTask) {
+                                preserveFileTimestamps = false
+                                reproducibleFileOrder = true
+                            }
+                        }
+                    """
                 }
             }
 
