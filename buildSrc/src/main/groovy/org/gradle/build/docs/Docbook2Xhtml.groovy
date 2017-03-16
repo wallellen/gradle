@@ -22,6 +22,9 @@ import org.gradle.api.file.FileVisitDetails
 import org.gradle.internal.classloader.ClasspathUtil
 import org.gradle.api.tasks.*
 import org.gradle.api.logging.LogLevel
+import org.gradle.workers.WorkerExecutor
+
+import javax.inject.Inject
 
 @CacheableTask
 class Docbook2Xhtml extends SourceTask {
@@ -58,6 +61,28 @@ class Docbook2Xhtml extends SourceTask {
     @InputFiles
     FileCollection resources
 
+    @Inject
+    WorkerExecutor getWorkerExecuter() {
+        throw new UnsupportedOperationException()
+    }
+
+    void setWorkerExecuter() {
+        throw new UnsupportedOperationException()
+    }
+
+    static class Transform implements Runnable {
+        private String[] args
+
+        Transform(String stylesheetFile, String fileToTransform, String result, File destDir) {
+            this.args = [stylesheetFile, fileToTransform, result, destDir?.absolutePath ?: ""]
+        }
+
+        @Override
+        void run() {
+            XslTransformer.main(args)
+        }
+    }
+
     @TaskAction
     def transform() {
         if (!((destFile != null) ^ (destDir != null))) {
@@ -80,20 +105,22 @@ class Docbook2Xhtml extends SourceTask {
                 outFile.parentFile.mkdirs()
                 result = outFile
             }
-            project.javaexec {
-                main = XslTransformer.name
-                args stylesheetFile.absolutePath
-                args fvd.file.absolutePath
-                args result.absolutePath
-                args destDir ?: ""
-                jvmArgs '-Xmx1024m'
-                classpath ClasspathUtil.getClasspathForClass(XslTransformer)
-                classpath this.classpath
-                classpath new File(stylesheetsDir, 'extensions/xalan27.jar')
-                systemProperty 'xslthl.config', new File("$stylesheetsDir/highlighting/xslthl-config.xml").toURI()
-                systemProperty 'org.apache.xerces.xni.parser.XMLParserConfiguration', 'org.apache.xerces.parsers.XIncludeParserConfiguration'
+
+            workerExecuter.submit(Transform) { config ->
+                config.displayName = 'Transform ' + fvd.file.name
+                config.forkOptions.with {
+                    maxHeapSize = '1024m'
+                    systemProperty 'xslthl.config', new File("$stylesheetsDir/highlighting/xslthl-config.xml").toURI()
+                    systemProperty 'org.apache.xerces.xni.parser.XMLParserConfiguration', 'org.apache.xerces.parsers.XIncludeParserConfiguration'
+                }
+                config.classpath([ClasspathUtil.getClasspathForClass(XslTransformer)])
+                config.classpath(this.classpath)
+                config.classpath([new File(stylesheetsDir, 'extensions/xalan27.jar')])
+                config.params = [stylesheetFile.absolutePath, fvd.file.absolutePath, result.absolutePath, destDir]
             }
         }
+
+        workerExecuter.await()
 
         if (resources) {
             project.copy {
