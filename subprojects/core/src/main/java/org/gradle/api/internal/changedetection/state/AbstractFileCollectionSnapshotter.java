@@ -36,6 +36,8 @@ import org.gradle.internal.nativeintegration.filesystem.FileSystem;
 import org.gradle.internal.serialize.SerializerRegistry;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -65,13 +67,21 @@ public abstract class AbstractFileCollectionSnapshotter implements FileCollectio
 
     @Override
     public FileCollectionSnapshot snapshot(FileCollection input, TaskFilePropertyCompareStrategy compareStrategy, final SnapshotNormalizationStrategy snapshotNormalizationStrategy) {
+        final List<List<FileDetails>> rootFileTreeElements = Lists.newLinkedList();
         final List<FileDetails> fileTreeElements = Lists.newLinkedList();
         FileCollectionInternal fileCollection = (FileCollectionInternal) input;
-        FileCollectionVisitorImpl visitor = new FileCollectionVisitorImpl(fileTreeElements);
+        RootFileCollectionVisitorImpl visitor = new RootFileCollectionVisitorImpl(rootFileTreeElements);
         fileCollection.visitRootElements(visitor);
 
-        if (fileTreeElements.isEmpty()) {
+        if (rootFileTreeElements.isEmpty()) {
             return FileCollectionSnapshot.EMPTY;
+        }
+
+        for (List<FileDetails> rootFileTreeElement : rootFileTreeElements) {
+            rootFileTreeElement = normaliseTreeElements(rootFileTreeElement);
+            for (FileDetails fileDetails : rootFileTreeElement) {
+                fileTreeElements.add(normaliseFileElement(fileDetails));
+            }
         }
 
         Map<String, NormalizedFileSnapshot> snapshots = Maps.newLinkedHashMap();
@@ -121,11 +131,12 @@ public abstract class AbstractFileCollectionSnapshotter implements FileCollectio
         return details;
     }
 
-    private class FileCollectionVisitorImpl implements FileCollectionVisitor {
-        private final List<FileDetails> fileTreeElements;
+    private class RootFileCollectionVisitorImpl implements FileCollectionVisitor {
 
-        FileCollectionVisitorImpl(List<FileDetails> fileTreeElements) {
-            this.fileTreeElements = fileTreeElements;
+        private final List<List<FileDetails>> rootFileTrees;
+
+        private RootFileCollectionVisitorImpl(List<List<FileDetails>> rootFileTrees) {
+            this.rootFileTrees = rootFileTrees;
         }
 
         @Override
@@ -138,15 +149,18 @@ public abstract class AbstractFileCollectionSnapshotter implements FileCollectio
                 }
                 switch (details.getType()) {
                     case Missing:
-                        fileTreeElements.add(details);
+                        rootFileTrees.add(Collections.singletonList(details));
                         break;
                     case RegularFile:
-                        fileTreeElements.add(normaliseFileElement(details));
+                        rootFileTrees.add(Collections.singletonList(details));
                         break;
                     case Directory:
+                        List<FileDetails> directoryTree = new ArrayList<FileDetails>();
                         // Visit the directory itself, then its contents
-                        fileTreeElements.add(details);
-                        visitDirectoryTree(directoryFileTreeFactory.create(file));
+                        directoryTree.add(details);
+                        DirectoryFileTree fileDetails = directoryFileTreeFactory.create(file);
+                        directoryTree.addAll(filesInDirectoryTree(fileDetails));
+                        rootFileTrees.add(directoryTree);
                         break;
                     default:
                         throw new AssertionError();
@@ -173,12 +187,10 @@ public abstract class AbstractFileCollectionSnapshotter implements FileCollectio
         public void visitTree(FileTreeInternal fileTree) {
             List<FileDetails> elements = Lists.newArrayList();
             fileTree.visitTreeOrBackingFile(new FileVisitorImpl(elements));
-            elements = normaliseTreeElements(elements);
-            fileTreeElements.addAll(elements);
+            rootFileTrees.add(elements);
         }
 
-        @Override
-        public void visitDirectoryTree(DirectoryFileTree directoryTree) {
+        private List<FileDetails> filesInDirectoryTree(DirectoryFileTree directoryTree) {
             List<FileDetails> elements;
             if (!directoryTree.getPatterns().isEmpty()) {
                 // Currently handle only those trees where we want everything from a directory
@@ -198,9 +210,12 @@ public abstract class AbstractFileCollectionSnapshotter implements FileCollectio
                     fileSystemMirror.putDirectory(details);
                 }
             }
+            return elements;
+        }
 
-            elements = normaliseTreeElements(elements);
-            fileTreeElements.addAll(elements);
+        @Override
+        public void visitDirectoryTree(DirectoryFileTree directoryTree) {
+            rootFileTrees.add(filesInDirectoryTree(directoryTree));
         }
     }
 
