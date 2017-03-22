@@ -155,12 +155,12 @@ public abstract class AbstractFileCollectionSnapshotter implements FileCollectio
                         rootFileTrees.add(Collections.singletonList(details));
                         break;
                     case Directory:
-                        List<FileDetails> directoryTree = new ArrayList<FileDetails>();
+                        List<FileDetails> directoryTreeElements = new ArrayList<FileDetails>();
                         // Visit the directory itself, then its contents
-                        directoryTree.add(details);
-                        DirectoryFileTree fileDetails = directoryFileTreeFactory.create(file);
-                        directoryTree.addAll(filesInDirectoryTree(fileDetails));
-                        rootFileTrees.add(directoryTree);
+                        directoryTreeElements.add(details);
+                        DirectoryFileTree directoryFileTree = directoryFileTreeFactory.create(file);
+                        directoryTreeElements.addAll(elementsInDirectoryTree(directoryFileTree));
+                        rootFileTrees.add(directoryTreeElements);
                         break;
                     default:
                         throw new AssertionError();
@@ -190,7 +190,7 @@ public abstract class AbstractFileCollectionSnapshotter implements FileCollectio
             rootFileTrees.add(elements);
         }
 
-        private List<FileDetails> filesInDirectoryTree(DirectoryFileTree directoryTree) {
+        private List<FileDetails> elementsInDirectoryTree(DirectoryFileTree directoryTree) {
             List<FileDetails> elements;
             if (!directoryTree.getPatterns().isEmpty()) {
                 // Currently handle only those trees where we want everything from a directory
@@ -215,7 +215,7 @@ public abstract class AbstractFileCollectionSnapshotter implements FileCollectio
 
         @Override
         public void visitDirectoryTree(DirectoryFileTree directoryTree) {
-            rootFileTrees.add(filesInDirectoryTree(directoryTree));
+            rootFileTrees.add(elementsInDirectoryTree(directoryTree));
         }
     }
 
