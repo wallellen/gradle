@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 the original author or authors.
+ * Copyright 2017 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,13 +21,14 @@ import org.gradle.api.internal.file.collections.DirectoryFileTreeFactory;
 import org.gradle.api.internal.hash.FileHasher;
 import org.gradle.internal.nativeintegration.filesystem.FileSystem;
 
-public class DefaultGenericFileCollectionSnapshotter extends ConfigurableFileCollectionSnapshotter implements GenericFileCollectionSnapshotter {
-    public DefaultGenericFileCollectionSnapshotter(FileHasher hasher, StringInterner stringInterner, FileSystem fileSystem, DirectoryFileTreeFactory directoryFileTreeFactory, FileSystemMirror fileSystemMirror) {
-        super(hasher, stringInterner, fileSystem, directoryFileTreeFactory, fileSystemMirror, new EndSnapshotterFilter());
+public class DefaultConfigurableCompileClasspathSnapshotter extends ConfigurableFileCollectionSnapshotter implements CompileClasspathSnapshotter {
+    public DefaultConfigurableCompileClasspathSnapshotter(FileHasher hasher, StringInterner stringInterner, FileSystem fileSystem, DirectoryFileTreeFactory directoryFileTreeFactory, FileSystemMirror fileSystemMirror) {
+        super(hasher, stringInterner, fileSystem, directoryFileTreeFactory, fileSystemMirror,
+            new ExpandJarSnapshotterFilter(hasher, new OnlyClassFilesSnapshotterFilter(new JavaAbiSnapshotterFilter(hasher))));
     }
 
     @Override
     public Class<? extends FileCollectionSnapshotter> getRegisteredType() {
-        return GenericFileCollectionSnapshotter.class;
+        return CompileClasspathSnapshotter.class;
     }
 }
