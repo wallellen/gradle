@@ -16,7 +16,7 @@
 
 package org.gradle.api.internal.changedetection.state;
 
-import com.google.common.collect.ImmutableSortedSet;
+import com.google.common.collect.Iterables;
 import com.google.common.hash.HashCode;
 import com.google.common.hash.Hasher;
 import com.google.common.hash.Hashing;
@@ -34,6 +34,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
@@ -61,19 +62,20 @@ public class ExpandJarSnapshotterFilter implements SnapshotterFilter {
 
     @Override
     public Iterable<FileDetails> filter(Iterable<SnapshottableFileDetails> details) {
-        ImmutableSortedSet.Builder<FileDetails> result = ImmutableSortedSet.orderedBy(FILE_DETAILS_COMPARATOR);
+        ArrayList<FileDetails> result = new ArrayList<FileDetails>();
         for (SnapshottableFileDetails fileDetails : details) {
             if (fileDetails.getType() == FileType.Directory || fileDetails.getType() == FileType.Missing) {
                 continue;
             }
             if (fileDetails.isRoot() && FileUtils.isJar(fileDetails.getName())) {
                 Collection<FileDetails> expandedZip = expandZip(fileDetails);
-                result.add(fileDetails.withContentHash(hash(expandedZip)));
+                result.add(DefaultFileDetails.copyOf(fileDetails).withContentHash(hash(expandedZip)));
             } else {
-                result.addAll(delegate.filter(Collections.singleton(fileDetails)));
+                Iterables.addAll(result, delegate.filter(Collections.singleton(fileDetails)));
             }
         }
-        return result.build();
+        Collections.sort(result, FILE_DETAILS_COMPARATOR);
+        return result;
     }
 
     private HashCode hash(Iterable<FileDetails> details) {
@@ -87,7 +89,7 @@ public class ExpandJarSnapshotterFilter implements SnapshotterFilter {
 
     private Collection<FileDetails> expandZip(SnapshottableFileDetails fileDetails) {
         File jarFilePath = new File(fileDetails.getPath());
-        ImmutableSortedSet.Builder<FileDetails> expandedZip = ImmutableSortedSet.orderedBy(FILE_DETAILS_COMPARATOR);
+        ArrayList<FileDetails> expandedZip = new ArrayList<FileDetails>();
         ZipInputStream zipInput = null;
         try {
             zipInput = new ZipInputStream(new FileInputStream(jarFilePath));
@@ -98,8 +100,9 @@ public class ExpandJarSnapshotterFilter implements SnapshotterFilter {
                     continue;
                 }
                 byte[] contents = ByteStreams.toByteArray(zipInput);
-                expandedZip.addAll(delegate.filter(Collections.<SnapshottableFileDetails>singleton(
-                    new ZipSnapshottableFileDetails(fileDetails, zipEntry, contents, hasher.hash(new ByteArrayInputStream(contents))))));
+                Iterable<FileDetails> filtered = delegate.filter(Collections.<SnapshottableFileDetails>singleton(
+                    new ZipSnapshottableFileDetails(fileDetails, zipEntry, contents, hasher.hash(new ByteArrayInputStream(contents)))));
+                Iterables.addAll(expandedZip, filtered);
             }
         } catch (ZipException e) {
             // ZipExceptions point to a problem with the Zip, we try to be lenient for now.
@@ -113,7 +116,8 @@ public class ExpandJarSnapshotterFilter implements SnapshotterFilter {
         } finally {
             IOUtils.closeQuietly(zipInput);
         }
-        return expandedZip.build();
+        Collections.sort(expandedZip, FILE_DETAILS_COMPARATOR);
+        return expandedZip;
     }
 
     private Collection<FileDetails> filterMalformedJar(SnapshottableFileDetails fileDetails) {
