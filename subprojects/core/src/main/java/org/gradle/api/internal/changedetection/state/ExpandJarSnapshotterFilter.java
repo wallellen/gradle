@@ -16,9 +16,10 @@
 
 package org.gradle.api.internal.changedetection.state;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.hash.HashCode;
+import com.google.common.hash.Hasher;
+import com.google.common.hash.Hashing;
 import com.google.common.io.ByteStreams;
 import org.apache.commons.io.IOUtils;
 import org.gradle.api.UncheckedIOException;
@@ -26,15 +27,16 @@ import org.gradle.api.file.RelativePath;
 import org.gradle.api.internal.hash.FileHasher;
 import org.gradle.internal.FileUtils;
 import org.gradle.internal.nativeintegration.filesystem.FileType;
+import org.gradle.util.DeprecationLogger;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipException;
 import java.util.zip.ZipInputStream;
@@ -65,7 +67,8 @@ public class ExpandJarSnapshotterFilter implements SnapshotterFilter {
                 continue;
             }
             if (fileDetails.isRoot() && FileUtils.isJar(fileDetails.getName())) {
-                result.addAll(expandZip(fileDetails));
+                Collection<FileDetails> expandedZip = expandZip(fileDetails);
+                result.add(fileDetails.withContentHash(hash(expandedZip)));
             } else {
                 result.addAll(delegate.filter(Collections.singleton(fileDetails)));
             }
@@ -73,9 +76,18 @@ public class ExpandJarSnapshotterFilter implements SnapshotterFilter {
         return result.build();
     }
 
-    private List<FileDetails> expandZip(SnapshottableFileDetails fileDetails) {
+    private HashCode hash(Iterable<FileDetails> details) {
+        Hasher hasher = Hashing.md5().newHasher();
+        for (FileDetails detail : details) {
+            hasher.putBytes(detail.getContent().getContentMd5().asBytes());
+        }
+        return hasher.hash();
+    }
+
+
+    private Collection<FileDetails> expandZip(SnapshottableFileDetails fileDetails) {
         File jarFilePath = new File(fileDetails.getPath());
-        ImmutableList.Builder<FileDetails> expandedZip = ImmutableList.<FileDetails>builder();
+        ImmutableSortedSet.Builder<FileDetails> expandedZip = ImmutableSortedSet.orderedBy(FILE_DETAILS_COMPARATOR);
         ZipInputStream zipInput = null;
         try {
             zipInput = new ZipInputStream(new FileInputStream(jarFilePath));
@@ -91,17 +103,22 @@ public class ExpandJarSnapshotterFilter implements SnapshotterFilter {
             }
         } catch (ZipException e) {
             // ZipExceptions point to a problem with the Zip, we try to be lenient for now.
-            return Collections.<FileDetails>singletonList(fileDetails);
+            return filterMalformedJar(fileDetails);
         } catch (IOException e) {
             // IOExceptions other than ZipException are failures.
             throw new UncheckedIOException("Error snapshotting jar [" + fileDetails.getName() + "]", e);
         } catch (Exception e) {
             // Other Exceptions can be thrown by invalid zips, too. See https://github.com/gradle/gradle/issues/1581.
-            return Collections.<FileDetails>singletonList(fileDetails);
+            return filterMalformedJar(fileDetails);
         } finally {
             IOUtils.closeQuietly(zipInput);
         }
         return expandedZip.build();
+    }
+
+    private Collection<FileDetails> filterMalformedJar(SnapshottableFileDetails fileDetails) {
+        DeprecationLogger.nagUserWith("Malformed jar [" + fileDetails.getName() + "] found on classpath. Gradle 5.0 will no longer allow malformed jars on a classpath.");
+        return Collections.<FileDetails>singletonList(fileDetails);
     }
 
     static class ZipSnapshottableFileDetails extends DefaultFileDetails implements SnapshottableFileDetails {

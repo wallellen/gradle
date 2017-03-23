@@ -18,6 +18,7 @@ package org.gradle.api.internal.changedetection.state;
 
 import com.google.common.collect.ImmutableList;
 import org.gradle.internal.FileUtils;
+import org.gradle.internal.nativeintegration.filesystem.FileType;
 
 public class OnlyClassFilesSnapshotterFilter implements SnapshotterFilter {
     private final SnapshotterFilter delegate;
@@ -30,7 +31,7 @@ public class OnlyClassFilesSnapshotterFilter implements SnapshotterFilter {
     public Iterable<FileDetails> filter(Iterable<SnapshottableFileDetails> details) {
         ImmutableList.Builder<SnapshottableFileDetails> filtered = ImmutableList.builder();
         for (SnapshottableFileDetails detail : details) {
-            if (FileUtils.isClass(detail.getName())) {
+            if (FileUtils.isClass(detail.getName()) && detail.getType() == FileType.RegularFile) {
                 filtered.add(detail);
             }
         }
