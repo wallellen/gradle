@@ -27,6 +27,16 @@ class DefaultFileDetails implements FileDetails {
     private final boolean root;
     private final IncrementalFileSnapshot content;
 
+    public static DefaultFileDetails copyOf(FileDetails details) {
+        if (details.getClass().equals(DefaultFileDetails.class)) {
+            return (DefaultFileDetails) details;
+        }
+        if (details.getClass().equals(DefaultPhysicalFileDetails.class)) {
+            return copyOf(((DefaultPhysicalFileDetails) details).getDelegate());
+        }
+        return new DefaultFileDetails(details.getPath(), details.getRelativePath(), details.getType(), details.isRoot(), details.getContent());
+    }
+
     DefaultFileDetails(String path, RelativePath relativePath, FileType type, boolean root, IncrementalFileSnapshot content) {
         this.path = path;
         this.relativePath = relativePath;
