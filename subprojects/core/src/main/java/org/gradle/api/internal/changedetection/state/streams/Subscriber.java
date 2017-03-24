@@ -14,8 +14,11 @@
  * limitations under the License.
  */
 
-package org.gradle.api.internal.changedetection.state.observers;
+package org.gradle.api.internal.changedetection.state.streams;
 
-public interface Publisher<T> {
-    void subscribe(Subscriber<? super T> subscriber);
+public interface Subscriber<T> {
+    void onSubscribe(Subscription subscription);
+    void onNext(T next);
+    void onError(Exception error);
+    void onCompleted();
 }

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.gradle.api.internal.changedetection.state.observers;
+package org.gradle.api.internal.changedetection.state.streams;
 
 public class GroupedPublisher<K, V> implements Publisher<V> {
     private final K key;
@@ -34,7 +34,7 @@ public class GroupedPublisher<K, V> implements Publisher<V> {
     }
 
     @Override
-    public void subscribe(Subscriber<? super V> subscriber) {
-        publisher.subscribe(subscriber);
+    public <T extends Subscriber<? super V>> T subscribe(T subscriber) {
+        return publisher.subscribe(subscriber);
     }
 }

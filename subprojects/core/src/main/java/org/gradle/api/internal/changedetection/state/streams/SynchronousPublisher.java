@@ -14,20 +14,29 @@
  * limitations under the License.
  */
 
-package org.gradle.api.internal.changedetection.state.observers;
+package org.gradle.api.internal.changedetection.state.streams;
+
+import java.util.LinkedList;
+import java.util.List;
 
 public abstract class SynchronousPublisher<T> implements Publisher<T> {
-    private Subscriber<? super T> subscriber;
+    private List<Subscriber<? super T>> subscribers = new LinkedList<Subscriber<? super T>>();
 
-    public Subscriber<? super T> getSubscriber() {
-        return subscriber;
+    public List<Subscriber<? super T>> getSubscribers() {
+        return subscribers;
     }
 
     @Override
-    public void subscribe(Subscriber<? super T> subscriber) {
-        this.subscriber = subscriber;
-
+    public <V extends Subscriber<? super T>> V subscribe(V subscriber) {
+        this.subscribers.add(subscriber);
+        subscriber.onSubscribe(new Subscription() {
+            @Override
+            public void request() {
+                doRequest();
+            }
+        });
+        return subscriber;
     }
 
-    public abstract void publish();
+    protected abstract void doRequest();
 }

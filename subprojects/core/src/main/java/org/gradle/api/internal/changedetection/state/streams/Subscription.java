@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-package org.gradle.api.internal.changedetection.state.observers;
+package org.gradle.api.internal.changedetection.state.streams;
 
-public interface Processor<R, T> extends Subscriber<R>, Publisher<T> {
+public interface Subscription {
+    void request();
 }

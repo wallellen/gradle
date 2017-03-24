@@ -1,0 +1,60 @@
+/*
+ * Copyright 2017 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.gradle.api.internal.changedetection.state;
+
+import com.google.common.hash.HashCode;
+import com.google.common.hash.Hasher;
+import com.google.common.hash.Hashing;
+import org.gradle.api.internal.changedetection.state.streams.AbstractProcessor;
+import org.gradle.api.internal.changedetection.state.streams.Subscriber;
+
+import java.util.ArrayList;
+
+public class CombineHashes extends AbstractProcessor<FileDetails, FileDetails> {
+    private final FileDetails toAddHashTo;
+    private ArrayList<FileDetails> toHash = new ArrayList<FileDetails>();
+
+    public CombineHashes(FileDetails toAddHashTo) {
+        this.toAddHashTo = toAddHashTo;
+    }
+
+    @Override
+    public void onNext(FileDetails next) {
+        toHash.add(next);
+    }
+
+    @Override
+    public void onCompleted() {
+        System.out.println("Starting to combine hashes for file " + toAddHashTo.getName() + ", hash before: " + toAddHashTo.getContent().getContentMd5());
+        FileDetails fileWithNewHash = toAddHashTo.withContentHash(hash(toHash));
+        for (Subscriber<? super FileDetails> subscriber : getSubscribers()) {
+            subscriber.onNext(fileWithNewHash);
+            subscriber.onCompleted();
+        }
+        System.out.println("Finished to combine hashes for file " + fileWithNewHash.getName() + ", hash after: " + fileWithNewHash.getContent().getContentMd5());
+    }
+
+    private HashCode hash(Iterable<FileDetails> details) {
+        Hasher hasher = Hashing.md5().newHasher();
+        for (FileDetails detail : details) {
+            System.out.println("Combining hashes for file: " + detail.getName() + ", hash: " + detail.getContent().getContentMd5());
+            hasher.putBytes(detail.getContent().getContentMd5().asBytes());
+        }
+        return hasher.hash();
+    }
+
+}

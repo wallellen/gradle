@@ -14,22 +14,7 @@
  * limitations under the License.
  */
 
-package org.gradle.api.internal.changedetection.state.observers
+package org.gradle.api.internal.changedetection.state.streams;
 
-import com.google.common.base.Function
-import spock.lang.Specification
-
-class PublishersTest extends Specification {
-
-    def "can map publisher"() {
-        def publisher = Publishers.create([1, 2, 3])
-        def subscriber = new CollectingSubscriber<Integer>()
-        Publishers.map(publisher, { it + 1 } as Function<Integer, Integer>).subscribe(subscriber)
-
-        when:
-        publisher.publish()
-
-        then:
-        subscriber.getCollection() == [2, 3, 4]
-    }
+public interface Processor<R, T> extends Subscriber<R>, Publisher<T> {
 }

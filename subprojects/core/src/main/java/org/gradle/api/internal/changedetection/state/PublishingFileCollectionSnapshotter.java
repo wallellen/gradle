@@ -18,7 +18,6 @@ package org.gradle.api.internal.changedetection.state;
 
 import com.google.common.base.Function;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import org.gradle.api.file.FileCollection;
@@ -27,9 +26,9 @@ import org.gradle.api.file.FileVisitDetails;
 import org.gradle.api.file.FileVisitor;
 import org.gradle.api.file.RelativePath;
 import org.gradle.api.internal.cache.StringInterner;
-import org.gradle.api.internal.changedetection.state.observers.CollectingSubscriber;
-import org.gradle.api.internal.changedetection.state.observers.Publisher;
-import org.gradle.api.internal.changedetection.state.observers.SynchronousPublisher;
+import org.gradle.api.internal.changedetection.state.streams.CollectingSubscriber;
+import org.gradle.api.internal.changedetection.state.streams.Publisher;
+import org.gradle.api.internal.changedetection.state.streams.SynchronousPublisher;
 import org.gradle.api.internal.file.FileCollectionInternal;
 import org.gradle.api.internal.file.FileCollectionVisitor;
 import org.gradle.api.internal.file.FileTreeInternal;
@@ -46,7 +45,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
-import static org.gradle.api.internal.changedetection.state.observers.Publishers.create;
+import static org.gradle.api.internal.changedetection.state.streams.Publishers.create;
 import static org.gradle.internal.nativeintegration.filesystem.FileType.*;
 
 /**
@@ -86,13 +85,6 @@ public abstract class PublishingFileCollectionSnapshotter implements FileCollect
         }
 
         for (Iterable<FileDetails> rootFileTreeElement : rootFileTreeElements) {
-            Iterable<SnapshottableFileDetails> snapshottableFileDetails = Iterables.transform(rootFileTreeElement, new Function<FileDetails, SnapshottableFileDetails>() {
-
-                @Override
-                public SnapshottableFileDetails apply(FileDetails input) {
-                    return new DefaultPhysicalFileDetails(input);
-                }
-            });
             SynchronousPublisher<FileDetails> publisher = create(rootFileTreeElement);
             CollectingSubscriber<FileDetails> result = new CollectingSubscriber<FileDetails>();
             transformer.apply(publisher).subscribe(result);
@@ -105,7 +97,7 @@ public abstract class PublishingFileCollectionSnapshotter implements FileCollect
 //            })).subscribe(result);
 //            map(publisher, new CleanupFileDetails()).subscribe(result);
 
-            publisher.publish();
+            result.request();
             fileTreeElements.addAll(result.getCollection());
         }
 
@@ -156,7 +148,7 @@ public abstract class PublishingFileCollectionSnapshotter implements FileCollect
         return details;
     }
 
-    private static class CleanupFileDetails implements Function<SnapshottableFileDetails, FileDetails> {
+    static class CleanupFileDetails implements Function<SnapshottableFileDetails, FileDetails> {
         @Override
         public FileDetails apply(SnapshottableFileDetails details) {
             return DefaultFileDetails.copyOf(details);

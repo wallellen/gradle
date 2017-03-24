@@ -18,20 +18,50 @@ package org.gradle.api.internal.changedetection.state;
 
 import com.google.common.base.Function;
 import org.gradle.api.internal.cache.StringInterner;
-import org.gradle.api.internal.changedetection.state.observers.Publisher;
-import org.gradle.api.internal.changedetection.state.observers.Publishers;
+import org.gradle.api.internal.changedetection.state.streams.GroupedPublisher;
+import org.gradle.api.internal.changedetection.state.streams.Publisher;
+import org.gradle.api.internal.changedetection.state.streams.Publishers;
+import org.gradle.api.internal.changedetection.state.streams.SortingProcessor;
 import org.gradle.api.internal.file.collections.DirectoryFileTreeFactory;
 import org.gradle.api.internal.hash.FileHasher;
+import org.gradle.api.specs.Spec;
+import org.gradle.api.specs.Specs;
+import org.gradle.internal.FileUtils;
 import org.gradle.internal.nativeintegration.filesystem.FileSystem;
 
+import java.util.Comparator;
+
+import static org.gradle.api.internal.changedetection.state.streams.Publishers.flatten;
+import static org.gradle.api.internal.changedetection.state.streams.Publishers.join;
+import static org.gradle.api.internal.changedetection.state.streams.Publishers.map;
+
 public class PublishingClasspathSnaphotter extends PublishingFileCollectionSnapshotter implements ClasspathSnapshotter {
-    public PublishingClasspathSnaphotter(FileHasher hasher, StringInterner stringInterner, FileSystem fileSystem, DirectoryFileTreeFactory directoryFileTreeFactory, FileSystemMirror fileSystemMirror, Function<Publisher<FileDetails>, Publisher<FileDetails>> transformer) {
+    private static final Comparator<FileDetails> FILE_DETAILS_COMPARATOR = new Comparator<FileDetails>() {
+        @Override
+        public int compare(FileDetails o1, FileDetails o2) {
+            return o1.getPath().compareTo(o2.getPath());
+        }
+    };
+    public static final Spec<FileDetails> IS_ROOT_JAR_FILE = new Spec<FileDetails>() {
+        @Override
+        public boolean isSatisfiedBy(FileDetails element) {
+            return FileUtils.isJar(element.getName()) && element.isRoot();
+        }
+    };
+
+    public PublishingClasspathSnaphotter(final FileHasher hasher, StringInterner stringInterner, FileSystem fileSystem, DirectoryFileTreeFactory directoryFileTreeFactory, FileSystemMirror fileSystemMirror) {
         super(hasher, stringInterner, fileSystem, directoryFileTreeFactory, fileSystemMirror,
             new Function<Publisher<FileDetails>, Publisher<FileDetails>>() {
                 @Override
                 public Publisher<FileDetails> apply(Publisher<FileDetails> publisher) {
-                    Publishers.map(publisher, new PhysicalSnapshot());
-                    return null;
+                    Publisher<FileDetails> regularFiles = Publishers.filter(publisher, Specs.negate(IS_ROOT_JAR_FILE));
+                    Publisher<FileDetails> rootJarFiles = Publishers.filter(publisher, IS_ROOT_JAR_FILE);
+
+                    Publisher<FileDetails> jarContentsHashed =
+                        flatten(
+                        map(
+                            map(rootJarFiles, new PhysicalSnapshot()).subscribe(new ExpandZipProcessor(hasher)), new HashJarContents()));
+                    return join(regularFiles, jarContentsHashed);
                 }
             }
         );
@@ -46,6 +76,21 @@ public class PublishingClasspathSnaphotter extends PublishingFileCollectionSnaps
         @Override
         public SnapshottableFileDetails apply(FileDetails input) {
             return new DefaultPhysicalFileDetails(input);
+        }
+    }
+
+    private static class HashJarContents implements Function<GroupedPublisher<SnapshottableFileDetails, SnapshottableFileDetails>, Publisher<FileDetails>> {
+        @Override
+        public Publisher<FileDetails> apply(GroupedPublisher<SnapshottableFileDetails, SnapshottableFileDetails> input) {
+            return map(input, cleanup()).subscribe(sort()).subscribe(new CombineHashes(input.getKey()));
+        }
+
+        private SortingProcessor<FileDetails> sort() {
+            return new SortingProcessor<FileDetails>(FILE_DETAILS_COMPARATOR);
+        }
+
+        private PublishingFileCollectionSnapshotter.CleanupFileDetails cleanup() {
+            return new CleanupFileDetails();
         }
     }
 }

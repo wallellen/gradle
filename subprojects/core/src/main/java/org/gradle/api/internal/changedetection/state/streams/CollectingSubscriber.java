@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.gradle.api.internal.changedetection.state.observers;
+package org.gradle.api.internal.changedetection.state.streams;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
@@ -24,6 +24,7 @@ import java.util.List;
 
 public class CollectingSubscriber<T> implements Subscriber<T> {
     private List<T> collector;
+    private Subscription subscription;
 
     public List<T> getCollection() {
         return collector;
@@ -32,9 +33,8 @@ public class CollectingSubscriber<T> implements Subscriber<T> {
     private Exception error;
 
     @Override
-    public void onSubscribe() {
-        collector = new ArrayList<T>();
-        error = null;
+    public void onSubscribe(Subscription subscription) {
+        this.subscription = subscription;
     }
 
     @Override
@@ -57,5 +57,11 @@ public class CollectingSubscriber<T> implements Subscriber<T> {
 
     public boolean isError() {
         return error != null;
+    }
+
+    public void request() {
+        collector = new ArrayList<T>();
+        error = null;
+        subscription.request();
     }
 }
