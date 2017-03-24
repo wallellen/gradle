@@ -17,6 +17,7 @@
 package org.gradle.api.internal.changedetection.state.observers;
 
 import com.google.common.base.Function;
+import org.gradle.api.specs.Spec;
 
 public class Publishers {
     public static <T, V> Publisher<V> map(final Publisher<T> publisher, final Function<T, V> function) {
@@ -47,4 +48,6 @@ public class Publishers {
             }
         };
     }
+
+    public static <T> Publisher<T> processMatching(Publisher<T> publisher, Spec<T> spec, Function<Publisher<T>, >)
 }

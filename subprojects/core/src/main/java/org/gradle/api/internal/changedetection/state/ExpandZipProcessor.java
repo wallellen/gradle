@@ -19,22 +19,21 @@ package org.gradle.api.internal.changedetection.state;
 import com.google.common.hash.HashCode;
 import com.google.common.io.ByteStreams;
 import org.apache.commons.io.IOUtils;
-import org.gradle.api.UncheckedIOException;
 import org.gradle.api.file.RelativePath;
 import org.gradle.api.internal.changedetection.state.observers.AbstractProcessor;
+import org.gradle.api.internal.changedetection.state.observers.GroupedPublisher;
 import org.gradle.api.internal.changedetection.state.observers.Publisher;
+import org.gradle.api.internal.changedetection.state.observers.Subscriber;
 import org.gradle.api.internal.hash.FileHasher;
 
 import java.io.ByteArrayInputStream;
-import java.io.IOException;
 import java.io.InputStream;
 import java.util.zip.ZipEntry;
-import java.util.zip.ZipException;
 import java.util.zip.ZipInputStream;
 
 import static org.gradle.internal.nativeintegration.filesystem.FileType.RegularFile;
 
-public class ExpandZipProcessor extends AbstractProcessor<Publisher<SnapshottableFileDetails>, SnapshottableFileDetails> {
+public class ExpandZipProcessor extends AbstractProcessor<SnapshottableFileDetails, GroupedPublisher<SnapshottableFileDetails, SnapshottableFileDetails>> {
     private final FileHasher hasher;
 
     public ExpandZipProcessor(FileHasher hasher) {
@@ -43,31 +42,39 @@ public class ExpandZipProcessor extends AbstractProcessor<Publisher<Snapshottabl
 
     @Override
     public void onNext(SnapshottableFileDetails fileDetails) {
-        ZipInputStream zipInput = null;
-        try {
-            zipInput = new ZipInputStream(fileDetails.open());
+        getSubscriber().onNext(GroupedPublisher.from(fileDetails, new ZipEntriesPublisher(fileDetails)));
+    }
 
-            ZipEntry zipEntry;
-            while ((zipEntry = zipInput.getNextEntry()) != null) {
-                if (zipEntry.isDirectory()) {
-                    continue;
+    class ZipEntriesPublisher implements Publisher<SnapshottableFileDetails> {
+        private final SnapshottableFileDetails zipFile;
+        public ZipEntriesPublisher(SnapshottableFileDetails zipFile) {
+            this.zipFile = zipFile;
+        }
+
+        @Override
+        public void subscribe(Subscriber<? super SnapshottableFileDetails> subscriber) {
+            subscriber.onSubscribe();
+            ZipInputStream zipInput = null;
+            try {
+                zipInput = new ZipInputStream(zipFile.open());
+
+                ZipEntry zipEntry;
+                while ((zipEntry = zipInput.getNextEntry()) != null) {
+                    if (zipEntry.isDirectory()) {
+                        continue;
+                    }
+                    byte[] contents = ByteStreams.toByteArray(zipInput);
+                    subscriber.onNext(
+                        new ZipSnapshottableFileDetails(zipFile, zipEntry, contents, hasher.hash(new ByteArrayInputStream(contents)))
+                    );
                 }
-                byte[] contents = ByteStreams.toByteArray(zipInput);
-                getSubscriber().onNext(new ExpandJarMapper.ZipSnapshottableFileDetails(fileDetails, zipEntry, contents, hasher.hash(new ByteArrayInputStream(contents))));
+                subscriber.onCompleted();
+            } catch (Exception e) {
+                // Other Exceptions can be thrown by invalid zips, too. See https://github.com/gradle/gradle/issues/1581.
+                subscriber.onError(e);
+            } finally {
+                IOUtils.closeQuietly(zipInput);
             }
-        } catch (ZipException e) {
-            // ZipExceptions point to a problem with the Zip, we try to be lenient for now.
-            filterMalformedJar(fileDetails);
-            return;
-        } catch (IOException e) {
-            // IOExceptions other than ZipException are failures.
-            throw new UncheckedIOException("Error snapshotting jar [" + fileDetails.getName() + "]", e);
-        } catch (Exception e) {
-            // Other Exceptions can be thrown by invalid zips, too. See https://github.com/gradle/gradle/issues/1581.
-            getSubscriber().onError(e);
-            return;
-        } finally {
-            IOUtils.closeQuietly(zipInput);
         }
     }
 
