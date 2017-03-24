@@ -27,6 +27,8 @@ import org.gradle.api.file.FileVisitDetails;
 import org.gradle.api.file.FileVisitor;
 import org.gradle.api.file.RelativePath;
 import org.gradle.api.internal.cache.StringInterner;
+import org.gradle.api.internal.changedetection.state.observers.CollectingSubscriber;
+import org.gradle.api.internal.changedetection.state.observers.SynchronousPublisher;
 import org.gradle.api.internal.file.FileCollectionInternal;
 import org.gradle.api.internal.file.FileCollectionVisitor;
 import org.gradle.api.internal.file.FileTreeInternal;
@@ -43,6 +45,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+import static org.gradle.api.internal.changedetection.state.observers.Publishers.create;
+import static org.gradle.api.internal.changedetection.state.observers.Publishers.map;
 import static org.gradle.internal.nativeintegration.filesystem.FileType.*;
 
 /**
@@ -89,10 +93,13 @@ public abstract class ConfigurableFileCollectionSnapshotter implements FileColle
                     return new DefaultPhysicalFileDetails(input);
                 }
             });
-            rootFileTreeElement = snapshotterFilter.filter(snapshottableFileDetails);
-            for (FileDetails fileDetails : rootFileTreeElement) {
-                fileTreeElements.add(fileDetails);
-            }
+            SynchronousPublisher<SnapshottableFileDetails> publisher = create(snapshottableFileDetails);
+            CollectingSubscriber<FileDetails> result = new CollectingSubscriber<FileDetails>();
+            map(publisher, new CleanupFileDetails()).subscribe(result);
+
+            publisher.publish();
+
+            fileTreeElements.addAll(result.getCollection());
         }
 
         Map<String, NormalizedFileSnapshot> snapshots = Maps.newLinkedHashMap();
@@ -140,6 +147,13 @@ public abstract class ConfigurableFileCollectionSnapshotter implements FileColle
      */
     protected FileDetails normaliseFileElement(FileDetails details) {
         return details;
+    }
+
+    private static class CleanupFileDetails implements Function<SnapshottableFileDetails, FileDetails> {
+        @Override
+        public FileDetails apply(SnapshottableFileDetails details) {
+            return DefaultFileDetails.copyOf(details);
+        }
     }
 
     private class RootFileCollectionVisitorImpl implements FileCollectionVisitor {

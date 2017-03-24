@@ -81,8 +81,6 @@ public class User {
             receiver.execute(fileDetails);
         }
 
-        public void
-
         private HashCode hash(Iterable<FileDetails> details) {
             Hasher hasher = Hashing.md5().newHasher();
             for (FileDetails detail : details) {
