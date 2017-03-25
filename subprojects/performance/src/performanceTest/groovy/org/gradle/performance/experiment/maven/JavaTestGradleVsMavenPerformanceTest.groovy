@@ -35,7 +35,7 @@ class JavaTestGradleVsMavenPerformanceTest extends AbstractGradleVsMavenPerforma
         runner.testGroup = "Gradle vs Maven test build using Java plugin"
         runner.testProject = testProject
         runner.jvmOpts = ["-Xms${testProject.daemonMemory}", "-Xmx${testProject.daemonMemory}"]
-        runner.args = testProject.parallel ? ['-T', testProject.parallelForks] : []
+        runner.args = testProject.parallel ? ['-T', testProject.maxWorkers] : []
         runner.gradleTasks = gradleTasks
         runner.equivalentMavenTasks = equivalentMavenTasks
 
@@ -65,7 +65,7 @@ class JavaTestGradleVsMavenPerformanceTest extends AbstractGradleVsMavenPerforma
         runner.testGroup = "Gradle vs Maven test build using Java plugin"
         runner.testProject = testProject
         runner.jvmOpts = ["-Xms${testProject.daemonMemory}", "-Xmx${testProject.daemonMemory}"]
-        runner.args = testProject.parallel ? ['-T', testProject.parallelForks] : []
+        runner.args = testProject.parallel ? ['-T', testProject.maxWorkers] : []
         runner.gradleTasks = gradleTasks
         runner.equivalentMavenTasks = equivalentMavenTasks
         runner.buildExperimentListener = new ApplyNonAbiChangeToJavaSourceFileMutator(fileToChange)
