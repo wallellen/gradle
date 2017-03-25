@@ -39,19 +39,16 @@ public class CombineHashes extends AbstractProcessor<FileDetails, FileDetails> {
 
     @Override
     public void onCompleted() {
-        System.out.println("Starting to combine hashes for file " + toAddHashTo.getName() + ", hash before: " + toAddHashTo.getContent().getContentMd5());
         FileDetails fileWithNewHash = toAddHashTo.withContentHash(hash(toHash));
         for (Subscriber<? super FileDetails> subscriber : getSubscribers()) {
             subscriber.onNext(fileWithNewHash);
             subscriber.onCompleted();
         }
-        System.out.println("Finished to combine hashes for file " + fileWithNewHash.getName() + ", hash after: " + fileWithNewHash.getContent().getContentMd5());
     }
 
     private HashCode hash(Iterable<FileDetails> details) {
         Hasher hasher = Hashing.md5().newHasher();
         for (FileDetails detail : details) {
-            System.out.println("Combining hashes for file: " + detail.getName() + ", hash: " + detail.getContent().getContentMd5());
             hasher.putBytes(detail.getContent().getContentMd5().asBytes());
         }
         return hasher.hash();
