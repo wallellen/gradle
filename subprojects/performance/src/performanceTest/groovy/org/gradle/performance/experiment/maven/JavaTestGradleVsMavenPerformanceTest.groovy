@@ -43,20 +43,15 @@ class JavaTestGradleVsMavenPerformanceTest extends AbstractGradleVsMavenPerforma
         def results = runner.run()
 
         then:
-        if (enableComparison) {
-            results.assertComparesWithMaven()
-        } else {
-            true
-        }
+        results.assertFasterThanMaven()
 
         where:
-        testProject                    | gradleTasks       | equivalentMavenTasks | enableComparison
-        MEDIUM_MONOLITHIC_JAVA_PROJECT | 'clean assemble'  | 'clean package'      | true
-        MEDIUM_MONOLITHIC_JAVA_PROJECT | 'cleanTest test'  | 'test'               | true
+        testProject                    | gradleTasks       | equivalentMavenTasks
+        MEDIUM_MONOLITHIC_JAVA_PROJECT | 'clean assemble'  | 'clean package'
+        MEDIUM_MONOLITHIC_JAVA_PROJECT | 'cleanTest test'  | 'test'
 
-        MEDIUM_JAVA_MULTI_PROJECT      | 'clean assemble'  | 'clean package'      | true
-        MEDIUM_JAVA_MULTI_PROJECT      | 'cleanTest test'  | 'test'               | false // TODO accepted difference: this scenario spends most of the time on forking test workers,
-                                                                                          // which is more expensive in Gradle at the moment
+        MEDIUM_JAVA_MULTI_PROJECT      | 'clean assemble'  | 'clean package'
+        MEDIUM_JAVA_MULTI_PROJECT      | 'cleanTest test'  | 'test'
     }
 
     @Unroll
@@ -74,7 +69,7 @@ class JavaTestGradleVsMavenPerformanceTest extends AbstractGradleVsMavenPerforma
         def results = runner.run()
 
         then:
-        results.assertComparesWithMaven()
+        results.assertFasterThanMaven()
 
         where:
         testProject                    | gradleTasks | equivalentMavenTasks | fileToChange
