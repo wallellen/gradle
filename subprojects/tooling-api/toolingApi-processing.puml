@@ -3,7 +3,7 @@ box ":toolingApi side"
   participant ConsumerConnection
   participant ModelProducer
 end box
-box ":launcher side"
+box ":toolingApiProvider side"
   participant DefaultConnection
   participant ProviderConnection
 end box
@@ -18,9 +18,11 @@ DefaultConnection -> ProviderConnection: request
 note right
 request is funneled into ProviderConnection that is much simpler
 end note
-box "BuildActionExecuter chain in :launcher"
+box "BuildActionExecuter chain in :toolingApiProvider"
 	participant LoggingBridging
 	participant DaemonBuild
+end box
+box ":launcher side"
 	participant DaemonClient
 end box
 ProviderConnection -> LoggingBridging: execute()

@@ -1,0 +1,13 @@
+apply plugin: 'java-library'
+
+dependencies {
+    api project(':toolingApi')
+
+    implementation project(':launcher')
+    implementation libraries.jcip
+}
+
+useTestFixtures()
+useTestFixtures(project: ":logging")
+
+useClassycle()

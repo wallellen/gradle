@@ -1,8 +1,8 @@
 dependencies {
     compile project(':core')
     compile project(':toolingApi')
+    compile project(':wrapper')
     compile libraries.commons_io
-    runtime project(':native')
 }
 
 task testKitVersionCompatibilityIntegTest(type: org.gradle.testing.IntegrationTest) {

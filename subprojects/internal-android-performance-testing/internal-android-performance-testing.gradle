@@ -17,6 +17,7 @@ renamedAndroidLibs.builtBy(renameAndroidTools)
 
 dependencies {
     compile project(':toolingApi')
+    compile project(':baseServices')
     compile renamedAndroidLibs
     androidTools('com.android.tools.build:gradle:2.3.0-beta3') {
         exclude group: 'org.gradle'

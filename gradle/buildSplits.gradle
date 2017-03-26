@@ -43,7 +43,8 @@ def buckets = [
         ":signing",
         ":testingBase",
         ":baseServicesGroovy",
-        ":toolingApiBuilders"
+        ":toolingApiBuilders",
+        ":toolingApiProvider"
     ],
 
     "4": [

@@ -48,6 +48,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
@@ -72,18 +73,19 @@ public class DefaultDaemonStarter implements DaemonStarter {
 
         GradleInstallation gradleInstallation = CurrentGradleInstallation.get();
         ModuleRegistry registry = new DefaultModuleRegistry(gradleInstallation);
-        ClassPath classpath;
+        ClassPath classpath = new DefaultClassPath();
         List<File> searchClassPath;
         if (gradleInstallation == null) {
-            // When not running from a Gradle distro, need runtime impl for launcher plus the search path to look for other modules
-            classpath = new DefaultClassPath();
-            for (Module module : registry.getModule("gradle-launcher").getAllRequiredModules()) {
+            // When not running from a Gradle distro, need runtime impl for tooling-api-provider plus the search path to look for other modules
+            for (Module module : registry.getModule("gradle-tooling-api-provider").getAllRequiredModules()) {
                 classpath = classpath.plus(module.getClasspath());
             }
             searchClassPath = registry.getAdditionalClassPath().getAsFiles();
         } else {
-            // When running from a Gradle distro, only need launcher jar. The daemon can find everything from there.
-            classpath = registry.getModule("gradle-launcher").getImplementationClasspath();
+            // When running from a Gradle distro, only need launcher & tooling-api-provider jars. The daemon can find everything from there.
+            for (String moduleName : Arrays.asList("gradle-launcher", "gradle-tooling-api-provider")) {
+                classpath = classpath.plus(registry.getModule(moduleName).getImplementationClasspath());
+            }
             searchClassPath = Collections.emptyList();
         }
         if (classpath.isEmpty()) {

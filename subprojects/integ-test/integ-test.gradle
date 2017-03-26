@@ -3,6 +3,7 @@ dependencies {
 
     integTestCompile project(':toolingApi')
     integTestCompile project(':launcher')
+    integTestCompile project(':toolingApiProvider')
     integTestCompile project(':dependencyManagement')
     integTestCompile project(':scala')
     integTestCompile project(':ear')

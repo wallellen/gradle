@@ -35,9 +35,17 @@ class GradleStartScriptGenerator extends DefaultTask {
     @Internal
     FileCollection launcherJar
 
+    @Internal
+    FileCollection toolingApiProviderJar
+
     @Input
     String getLauncherJarName() {
         return launcherJar?.singleFile?.name
+    }
+
+    @Input
+    String getToolingApiProviderJarName() {
+        return toolingApiProviderJar?.singleFile?.name
     }
 
     @OutputFile
@@ -59,7 +67,7 @@ class GradleStartScriptGenerator extends DefaultTask {
         generator.exitEnvironmentVar = 'GRADLE_EXIT_CONSOLE'
         generator.mainClassName = 'org.gradle.launcher.GradleMain'
         generator.scriptRelPath = 'bin/gradle'
-        generator.classpath = ["lib/${launcherJar.singleFile.name}" as String]
+        generator.classpath = ["lib/${launcherJar.singleFile.name}", "lib/${toolingApiProviderJar.singleFile.name}"] as Iterable<String>
         generator.appNameSystemProperty = 'org.gradle.appname'
         generator.generateUnixScript(shellScript)
         generator.generateWindowsScript(batchFile)

@@ -1,9 +1,10 @@
+apply plugin: 'java-library'
+
 dependencies {
-    compile project(':core')
-    compile project(':testingJvm')
-    compile project(':launcher')
-    compile project(':toolingApi')
-    compile project(':compositeBuilds')
+    implementation project(':toolingApiProvider')
+    implementation project(':launcher')
+    implementation project(':testingJvm')
+    implementation project(':compositeBuilds')
 }
 
 useClassycle()

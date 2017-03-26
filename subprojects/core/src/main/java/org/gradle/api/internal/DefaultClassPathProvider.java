@@ -30,7 +30,7 @@ public class DefaultClassPathProvider implements ClassPathProvider {
     public ClassPath findClassPath(String name) {
         if (name.equals("GRADLE_RUNTIME")) {
             ClassPath classpath = new DefaultClassPath();
-            for (Module module : moduleRegistry.getModule("gradle-launcher").getAllRequiredModules()) {
+            for (Module module : moduleRegistry.getModule("gradle-tooling-api-provider").getAllRequiredModules()) {
                 classpath = classpath.plus(module.getClasspath());
             }
             return classpath;

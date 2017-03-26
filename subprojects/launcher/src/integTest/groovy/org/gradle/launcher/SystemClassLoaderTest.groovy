@@ -66,6 +66,7 @@ class SystemClassLoaderTest extends AbstractIntegrationSpec {
                         println "$heading"
                         println systemLoaderUrls.size()
                         println systemLoaderUrls[0]
+                        println systemLoaderUrls[1]
                     } else {
                         println "$noInfoHeading"
                     }
@@ -82,7 +83,8 @@ class SystemClassLoaderTest extends AbstractIntegrationSpec {
 
         lines.find { it == heading } // here for nicer output if the output isn't what we expect
         def headingIndex = lines.indexOf(heading)
-        lines[headingIndex + 1] == "1"
+        lines[headingIndex + 1] == "2"
         lines[headingIndex + 2].contains("gradle-launcher")
+        lines[headingIndex + 3].contains("gradle-tooling-api-provider")
     }
 }
