@@ -27,7 +27,7 @@ import org.gradle.api.file.FileVisitor;
 import org.gradle.api.file.RelativePath;
 import org.gradle.api.internal.cache.StringInterner;
 import org.gradle.api.internal.changedetection.state.streams.CollectingSubscriber;
-import org.gradle.api.internal.changedetection.state.streams.Publisher;
+import org.gradle.api.internal.changedetection.state.streams.Processor;
 import org.gradle.api.internal.changedetection.state.streams.SynchronousPublisher;
 import org.gradle.api.internal.file.FileCollectionInternal;
 import org.gradle.api.internal.file.FileCollectionVisitor;
@@ -35,6 +35,7 @@ import org.gradle.api.internal.file.FileTreeInternal;
 import org.gradle.api.internal.file.collections.DirectoryFileTree;
 import org.gradle.api.internal.file.collections.DirectoryFileTreeFactory;
 import org.gradle.api.internal.hash.FileHasher;
+import org.gradle.internal.Factory;
 import org.gradle.internal.nativeintegration.filesystem.FileMetadataSnapshot;
 import org.gradle.internal.nativeintegration.filesystem.FileSystem;
 import org.gradle.internal.serialize.SerializerRegistry;
@@ -57,15 +58,15 @@ public abstract class PublishingFileCollectionSnapshotter implements FileCollect
     private final FileSystem fileSystem;
     private final DirectoryFileTreeFactory directoryFileTreeFactory;
     private final FileSystemMirror fileSystemMirror;
-    private final Function<Publisher<FileDetails>, Publisher<FileDetails>> transformer;
+    private final Factory<Processor<FileDetails, FileDetails>> processorFactory;
 
-    public PublishingFileCollectionSnapshotter(FileHasher hasher, StringInterner stringInterner, FileSystem fileSystem, DirectoryFileTreeFactory directoryFileTreeFactory, FileSystemMirror fileSystemMirror, Function<Publisher<FileDetails>, Publisher<FileDetails>> transformer) {
+    public PublishingFileCollectionSnapshotter(FileHasher hasher, StringInterner stringInterner, FileSystem fileSystem, DirectoryFileTreeFactory directoryFileTreeFactory, FileSystemMirror fileSystemMirror, Factory<Processor<FileDetails, FileDetails>> processorFactory) {
         this.hasher = hasher;
         this.stringInterner = stringInterner;
         this.fileSystem = fileSystem;
         this.directoryFileTreeFactory = directoryFileTreeFactory;
         this.fileSystemMirror = fileSystemMirror;
-        this.transformer = transformer;
+        this.processorFactory = processorFactory;
     }
 
     public void registerSerializers(SerializerRegistry registry) {
@@ -87,7 +88,7 @@ public abstract class PublishingFileCollectionSnapshotter implements FileCollect
         for (Iterable<FileDetails> rootFileTreeElement : rootFileTreeElements) {
             SynchronousPublisher<FileDetails> publisher = create(rootFileTreeElement);
             CollectingSubscriber<FileDetails> result = new CollectingSubscriber<FileDetails>();
-            transformer.apply(publisher).subscribe(result);
+            publisher.subscribe(processorFactory.create()).map(new CleanupFileDetails()).subscribe(result);
 
 //            ap(publisher, new Function<FileDetails, SnapshottableFileDetails>() {
 //                @Override
@@ -148,9 +149,9 @@ public abstract class PublishingFileCollectionSnapshotter implements FileCollect
         return details;
     }
 
-    static class CleanupFileDetails implements Function<SnapshottableFileDetails, FileDetails> {
+    static class CleanupFileDetails implements Function<FileDetails, FileDetails> {
         @Override
-        public FileDetails apply(SnapshottableFileDetails details) {
+        public FileDetails apply(FileDetails details) {
             return DefaultFileDetails.copyOf(details);
         }
     }

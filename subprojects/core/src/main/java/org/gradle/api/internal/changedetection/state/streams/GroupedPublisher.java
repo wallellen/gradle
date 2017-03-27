@@ -16,7 +16,7 @@
 
 package org.gradle.api.internal.changedetection.state.streams;
 
-public class GroupedPublisher<K, V> implements Publisher<V> {
+public class GroupedPublisher<K, V> extends AbstractPublisher<V> {
     private final K key;
     private final Publisher<V> publisher;
 

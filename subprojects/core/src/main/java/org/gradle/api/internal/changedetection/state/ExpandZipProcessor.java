@@ -21,8 +21,8 @@ import com.google.common.io.ByteStreams;
 import org.apache.commons.io.IOUtils;
 import org.gradle.api.file.RelativePath;
 import org.gradle.api.internal.changedetection.state.streams.AbstractProcessor;
+import org.gradle.api.internal.changedetection.state.streams.AbstractPublisher;
 import org.gradle.api.internal.changedetection.state.streams.GroupedPublisher;
-import org.gradle.api.internal.changedetection.state.streams.Publisher;
 import org.gradle.api.internal.changedetection.state.streams.Subscriber;
 import org.gradle.api.internal.changedetection.state.streams.Subscription;
 import org.gradle.api.internal.hash.FileHasher;
@@ -49,7 +49,7 @@ public class ExpandZipProcessor extends AbstractProcessor<SnapshottableFileDetai
         }
     }
 
-    public class ZipEntriesPublisher implements Publisher<SnapshottableFileDetails> {
+    public class ZipEntriesPublisher extends AbstractPublisher<SnapshottableFileDetails> {
         private final SnapshottableFileDetails zipFile;
         public ZipEntriesPublisher(SnapshottableFileDetails zipFile) {
             this.zipFile = zipFile;

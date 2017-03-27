@@ -17,6 +17,7 @@
 package org.gradle.api.internal.changedetection.state.streams
 
 import com.google.common.base.Function
+import org.gradle.api.specs.Spec
 import spock.lang.Specification
 
 import static org.gradle.api.internal.changedetection.state.streams.Publishers.*
@@ -26,7 +27,7 @@ class PublishersTest extends Specification {
     def "can map publisher"() {
         def publisher = create([1, 2, 3])
         def subscriber = new CollectingSubscriber<Integer>()
-        map(publisher, { it + 1 } as Function<Integer, Integer>).subscribe(subscriber)
+        publisher.map({ it + 1 } as Function<Integer, Integer>).subscribe(subscriber)
 
         when:
         subscriber.request()
@@ -38,7 +39,7 @@ class PublishersTest extends Specification {
     def "can filter"() {
         def publisher = create([1, 2, 3])
         def subscriber = new CollectingSubscriber<Integer>()
-        filter(publisher, { it % 2 == 0 }).subscribe(subscriber)
+        publisher.filter({ it % 2 == 0 } as Spec<Integer>).subscribe(subscriber)
 
         when:
         subscriber.request()
@@ -47,12 +48,12 @@ class PublishersTest extends Specification {
         subscriber.getCollection() == [2]
     }
 
-    def "can flatten"() {
+    def "can flatMap"() {
         def publisher = create([1, 2, 3])
         def subscriber = new CollectingSubscriber<Integer>()
-        flatten(map(publisher, { Integer i ->
+        publisher.flatMap({ Integer i ->
             create((1..i))
-        } as Function)).subscribe(subscriber)
+        } as Function).subscribe(subscriber)
 
         when:
         subscriber.request()
@@ -65,7 +66,7 @@ class PublishersTest extends Specification {
         def publisher1 = create([1, 2, 3])
         def publisher2 = create([5, 7])
         def subscriber = new CollectingSubscriber<Integer>()
-        join(publisher1, publisher2).subscribe(subscriber)
+        publisher1.join(publisher2).subscribe(subscriber)
 
         when:
         subscriber.request()
@@ -77,7 +78,22 @@ class PublishersTest extends Specification {
     def "filtering works in combination with join"() {
         def publisher = create([1, 2, 3, 4])
         def subscriber = new CollectingSubscriber<Integer>()
-        join(filter(publisher, { it % 2 == 0}), filter(publisher, { it % 2 == 1 })).subscribe(subscriber)
+        publisher.filter { it % 2 == 0}.join(publisher.filter { it % 2 == 1 }).subscribe(subscriber)
+
+        when:
+        subscriber.request()
+
+        then:
+        subscriber.collection == [1, 2, 3, 4]
+    }
+
+    def "can use processors"() {
+        def publisher = create([1, 2, 3, 4])
+        def subscriber = new CollectingSubscriber<Integer>()
+
+        def start = Processors.identity()
+        def processor = Processors.compose(start, start.filter { it % 2 == 0}.join(publisher.filter { it % 2 == 1 }))
+        publisher.subscribe(processor).subscribe(subscriber)
 
         when:
         subscriber.request()

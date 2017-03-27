@@ -16,25 +16,11 @@
 
 package org.gradle.api.internal.changedetection.state.streams;
 
-import com.google.common.base.Function;
 import org.gradle.api.specs.Spec;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class Publishers {
-    public static <T, V> Publisher<V> map(final Publisher<T> publisher, final Function<T, V> function) {
-        Processor<T, V> processor = new AbstractProcessor<T, V>() {
-            @Override
-            public void onNext(T next) {
-                for (Subscriber<? super V> subscriber : getSubscribers()) {
-                    subscriber.onNext(function.apply(next));
-                }
-            }
-        };
-        publisher.subscribe(processor);
-        return processor;
-    }
-
     public static <T> SynchronousPublisher<T> create(final Iterable<? extends T> inputs) {
         return new SynchronousPublisher<T>() {
             boolean published;

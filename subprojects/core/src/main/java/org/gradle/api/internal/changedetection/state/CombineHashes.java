@@ -39,7 +39,8 @@ public class CombineHashes extends AbstractProcessor<FileDetails, FileDetails> {
 
     @Override
     public void onCompleted() {
-        FileDetails fileWithNewHash = toAddHashTo.withContentHash(hash(toHash));
+        HashCode newHash = hash(toHash);
+        FileDetails fileWithNewHash = toAddHashTo.withContentHash(newHash);
         for (Subscriber<? super FileDetails> subscriber : getSubscribers()) {
             subscriber.onNext(fileWithNewHash);
             subscriber.onCompleted();

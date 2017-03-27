@@ -16,27 +16,21 @@
 
 package org.gradle.api.internal.changedetection.state.streams;
 
-import java.util.LinkedList;
-import java.util.List;
+import org.gradle.api.specs.Spec;
 
-public abstract class SynchronousPublisher<T> extends AbstractPublisher<T> {
-    private List<Subscriber<? super T>> subscribers = new LinkedList<Subscriber<? super T>>();
+class FilteringProcessor<T> extends AbstractProcessor<T, T> {
+    private final Spec<? super T> spec;
 
-    public List<Subscriber<? super T>> getSubscribers() {
-        return subscribers;
+    public FilteringProcessor(Spec<? super T> spec) {
+        this.spec = spec;
     }
 
     @Override
-    public <V extends Subscriber<? super T>> V subscribe(V subscriber) {
-        this.subscribers.add(subscriber);
-        subscriber.onSubscribe(new Subscription() {
-            @Override
-            public void request() {
-                doRequest();
+    public void onNext(T next) {
+        if (spec.isSatisfiedBy(next)) {
+            for (Subscriber<? super T> subscriber : getSubscribers()) {
+                subscriber.onNext(next);
             }
-        });
-        return subscriber;
+        }
     }
-
-    protected abstract void doRequest();
 }

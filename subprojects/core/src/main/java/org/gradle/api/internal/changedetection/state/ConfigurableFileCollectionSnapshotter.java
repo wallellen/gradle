@@ -46,7 +46,6 @@ import java.util.List;
 import java.util.Map;
 
 import static org.gradle.api.internal.changedetection.state.streams.Publishers.create;
-import static org.gradle.api.internal.changedetection.state.streams.Publishers.map;
 import static org.gradle.internal.nativeintegration.filesystem.FileType.*;
 
 /**
@@ -95,7 +94,7 @@ public abstract class ConfigurableFileCollectionSnapshotter implements FileColle
             });
             SynchronousPublisher<SnapshottableFileDetails> publisher = create(snapshottableFileDetails);
             CollectingSubscriber<FileDetails> result = new CollectingSubscriber<FileDetails>();
-            map(publisher, new CleanupFileDetails()).subscribe(result);
+            publisher.map(new CleanupFileDetails()).subscribe(result);
 
             result.request();
 

@@ -23,7 +23,7 @@ import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
-public abstract class AbstractProcessor<R, T> implements Processor<R, T> {
+public abstract class AbstractProcessor<R, T> extends AbstractPublisher<T> implements Processor<R, T> {
     private List<Subscriber<? super T>> subscribers = new LinkedList<Subscriber<? super T>>();
     private BlockingQueue<Subscription> parentSubscriptions = new LinkedBlockingQueue<Subscription>();
 
@@ -53,6 +53,12 @@ public abstract class AbstractProcessor<R, T> implements Processor<R, T> {
     }
 
     protected void request() {}
+
+    public void allSubscribersOnNext(T next) {
+        for (Subscriber<? super T> subscriber : getSubscribers()) {
+            subscriber.onNext(next);
+        }
+    }
 
     @Override
     public void onError(Exception error) {

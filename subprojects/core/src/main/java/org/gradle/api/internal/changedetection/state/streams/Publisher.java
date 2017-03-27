@@ -16,6 +16,15 @@
 
 package org.gradle.api.internal.changedetection.state.streams;
 
+import com.google.common.base.Function;
+import org.gradle.api.specs.Spec;
+
 public interface Publisher<T> {
     <V extends Subscriber<? super T>> V subscribe(V subscriber);
+
+    <V> Publisher<V> map(final Function<? super T, ? extends V> function);
+    <V> Publisher<V> flatMap(Function<T, Publisher<V>> function);
+    Publisher<T> filter(final Spec<? super T> spec);
+    Publisher<T> join(Publisher<T> right);
 }
+
