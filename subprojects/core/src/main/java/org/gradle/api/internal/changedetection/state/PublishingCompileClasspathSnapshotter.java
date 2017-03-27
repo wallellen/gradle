@@ -16,20 +16,17 @@
 
 package org.gradle.api.internal.changedetection.state;
 
-import com.google.common.base.Function;
 import com.google.common.hash.HashCode;
+import io.reactivex.Observable;
+import io.reactivex.ObservableSource;
+import io.reactivex.ObservableTransformer;
+import io.reactivex.functions.Predicate;
+import io.reactivex.observables.GroupedObservable;
 import org.gradle.api.internal.cache.StringInterner;
-import org.gradle.api.internal.changedetection.state.streams.GroupedPublisher;
-import org.gradle.api.internal.changedetection.state.streams.Processor;
-import org.gradle.api.internal.changedetection.state.streams.Processors;
-import org.gradle.api.internal.changedetection.state.streams.Publisher;
 import org.gradle.api.internal.file.collections.DirectoryFileTreeFactory;
 import org.gradle.api.internal.hash.FileHasher;
 import org.gradle.api.internal.tasks.compile.ApiClassExtractor;
-import org.gradle.api.specs.Spec;
-import org.gradle.api.specs.Specs;
 import org.gradle.cache.PersistentIndexedCache;
-import org.gradle.internal.Factory;
 import org.gradle.internal.FileUtils;
 import org.gradle.internal.nativeintegration.filesystem.FileSystem;
 import org.gradle.internal.nativeintegration.filesystem.FileType;
@@ -37,12 +34,11 @@ import org.gradle.internal.nativeintegration.filesystem.FileType;
 import java.util.Collections;
 
 import static org.gradle.api.internal.changedetection.state.PublishingClasspathSnaphotter.*;
-import static org.gradle.api.internal.changedetection.state.streams.Processors.compose;
 
 public class PublishingCompileClasspathSnapshotter extends PublishingFileCollectionSnapshotter implements CompileClasspathSnapshotter {
-    public static final Spec<FileDetails> IS_CLASS_FILE = new Spec<FileDetails>() {
+    public static final Predicate<FileDetails> IS_CLASS_FILE = new Predicate<FileDetails>() {
         @Override
-        public boolean isSatisfiedBy(FileDetails element) {
+        public boolean test(FileDetails element) {
             return FileUtils.isClass(element.getName()) &&  element.getType() == FileType.RegularFile;
         }
     };
@@ -52,7 +48,7 @@ public class PublishingCompileClasspathSnapshotter extends PublishingFileCollect
             new CompileClasspathSnapshotterProcessor(hasher, signatureCache, compileSignatureCache));
     }
 
-    private static class CompileClasspathSnapshotterProcessor implements Factory<Processor<FileDetails, FileDetails>> {
+    private static class CompileClasspathSnapshotterProcessor implements ObservableTransformer<FileDetails, FileDetails> {
         private final FileHasher hasher;
         private final PersistentIndexedCache<HashCode, HashCode> persistentCache;
         private final PersistentIndexedCache<HashCode, HashCode> compileSignatureCache;
@@ -64,64 +60,52 @@ public class PublishingCompileClasspathSnapshotter extends PublishingFileCollect
         }
 
         @Override
-        public Processor<FileDetails, FileDetails> create() {
-            HashClassSignaturesFactory hashClassSignaturesFactory = new HashClassSignaturesFactory(compileSignatureCache);
-            Processor<FileDetails, FileDetails> start = Processors.identity();
-            Publisher<FileDetails> regularFiles = start.filter(Specs.negate(IS_ROOT_JAR_FILE))
-                .map(new PublishingClasspathSnaphotter.PhysicalSnapshot())
-                .subscribe(hashClassSignaturesFactory.create());
-            Publisher<FileDetails> rootJarFiles = start.filter(IS_ROOT_JAR_FILE);
+        public Observable<FileDetails> apply(Observable<FileDetails> input) {
+            HashClassSignaturesTransformer hashClassSignaturesTransformer = new HashClassSignaturesTransformer(compileSignatureCache);
+            Observable<FileDetails> classFiles = input.filter(IS_CLASS_FILE)
+                .map(new PhysicalSnapshot())
+                .compose(hashClassSignaturesTransformer);
+            Observable<FileDetails> rootJarFiles = input.filter(IS_ROOT_JAR_FILE);
 
-            Processor<FileDetails, FileDetails> jarContentsHashed =
-                rootJarFiles.subscribe(cache(hashZipContents(hasher)))
-                    .subscribe(compileCache(hashClassSignaturesInJar(hasher, hashClassSignaturesFactory)));
+            Observable<FileDetails> jarContentsHashed =
+                rootJarFiles.compose(hashZipContents(hasher)).compose(hashSignaturesInJar(hashClassSignaturesTransformer));
 
-            return compose(start, regularFiles.join(jarContentsHashed).subscribe(sort()));
+            return Observable.concat(classFiles, jarContentsHashed);
         }
 
-        private <S extends FileDetails> Processor<S, FileDetails> cache(Processor<S, FileDetails> processor) {
-            return new CachingProcessor<S>(persistentCache, processor);
+        private ObservableTransformer<? super FileDetails, ? extends FileDetails> hashSignaturesInJar(final HashClassSignaturesTransformer hashClassSignaturesTransformer) {
+            return new ObservableTransformer<FileDetails, FileDetails>() {
+                @Override
+                public ObservableSource<FileDetails> apply(Observable<FileDetails> upstream) {
+                    Observable<GroupedObservable<SnapshottableFileDetails, SnapshottableFileDetails>> expanded = upstream.map(new PhysicalSnapshot()).flatMap(expandZip(hasher));
+                    return expanded.flatMap(hashClassSignaturesInJar(hashClassSignaturesTransformer));
+                }
+            };
         }
 
-        private <S extends FileDetails> Processor<S, FileDetails> compileCache(Processor<S, FileDetails> processor) {
-            return new CachingProcessor<S>(compileSignatureCache, processor);
+        private io.reactivex.functions.Function<? super GroupedObservable<SnapshottableFileDetails, SnapshottableFileDetails>, Observable<FileDetails>> hashClassSignaturesInJar(final HashClassSignaturesTransformer hashClassSignaturesTransformer) {
+            return new io.reactivex.functions.Function<GroupedObservable<SnapshottableFileDetails, SnapshottableFileDetails>, Observable<FileDetails>>() {
+                @Override
+                public Observable<FileDetails> apply(GroupedObservable<SnapshottableFileDetails, SnapshottableFileDetails> groupedObservable) throws Exception {
+                    return groupedObservable.compose(hashClassSignaturesTransformer).toList().map(combineHashes(groupedObservable.getKey())).toObservable();
+                }
+            };
         }
     }
 
-    private static Processor<FileDetails, FileDetails> hashClassSignaturesInJar(FileHasher hasher, HashClassSignaturesFactory hashClassSignaturesFactory) {
-        Processor<FileDetails, FileDetails> start = Processors.identity();
-        Publisher<FileDetails> end = expandZip(hasher, start).flatMap(new CombineClassSignatures(hashClassSignaturesFactory));
-        return compose(start, end);
-    }
-
-    public static class HashClassSignaturesFactory implements Factory<Processor<SnapshottableFileDetails, FileDetails>> {
+    public static class HashClassSignaturesTransformer implements ObservableTransformer<SnapshottableFileDetails, FileDetails> {
         private final PersistentIndexedCache<HashCode, HashCode> signatureCache;
         private final ApiClassExtractor extractor = new ApiClassExtractor(Collections.<String>emptySet());
 
-        private HashClassSignaturesFactory(PersistentIndexedCache<HashCode, HashCode> signatureCache) {
+        private HashClassSignaturesTransformer(PersistentIndexedCache<HashCode, HashCode> signatureCache) {
             this.signatureCache = signatureCache;
         }
 
         @Override
-        public Processor<SnapshottableFileDetails, FileDetails> create() {
-            Processor<SnapshottableFileDetails, SnapshottableFileDetails> start = Processors.identity();
-            Publisher<FileDetails> end = start
+        public ObservableSource<FileDetails> apply(Observable<SnapshottableFileDetails> upstream) {
+            return upstream
                 .filter(IS_CLASS_FILE)
-                .subscribe(new HashAbiProcessor(extractor));
-            return new CachingProcessor<SnapshottableFileDetails>(signatureCache, compose(start, end));
-        }
-    }
-
-    public static class CombineClassSignatures implements Function<GroupedPublisher<SnapshottableFileDetails, SnapshottableFileDetails>, Publisher<FileDetails>> {
-        private final HashClassSignaturesFactory hashClassSignaturesFactory;
-
-        public CombineClassSignatures(HashClassSignaturesFactory hashClassSignaturesFactory) {
-            this.hashClassSignaturesFactory = hashClassSignaturesFactory;
-        }
-
-        @Override
-        public Publisher<FileDetails> apply(GroupedPublisher<SnapshottableFileDetails, SnapshottableFileDetails> input) {
-            return input.subscribe(hashClassSignaturesFactory.create()).subscribe(sort()).subscribe(new CombineHashes(input.getKey()));
+                .flatMapIterable(new HashAbiFunction(extractor)).sorted(FILE_DETAILS_COMPARATOR);
         }
     }
 

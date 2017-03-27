@@ -16,26 +16,24 @@
 
 package org.gradle.api.internal.changedetection.state;
 
-import com.google.common.base.Function;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import io.reactivex.Observable;
+import io.reactivex.ObservableTransformer;
+import io.reactivex.functions.Function;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.file.FileTreeElement;
 import org.gradle.api.file.FileVisitDetails;
 import org.gradle.api.file.FileVisitor;
 import org.gradle.api.file.RelativePath;
 import org.gradle.api.internal.cache.StringInterner;
-import org.gradle.api.internal.changedetection.state.streams.CollectingSubscriber;
-import org.gradle.api.internal.changedetection.state.streams.Processor;
-import org.gradle.api.internal.changedetection.state.streams.SynchronousPublisher;
 import org.gradle.api.internal.file.FileCollectionInternal;
 import org.gradle.api.internal.file.FileCollectionVisitor;
 import org.gradle.api.internal.file.FileTreeInternal;
 import org.gradle.api.internal.file.collections.DirectoryFileTree;
 import org.gradle.api.internal.file.collections.DirectoryFileTreeFactory;
 import org.gradle.api.internal.hash.FileHasher;
-import org.gradle.internal.Factory;
 import org.gradle.internal.nativeintegration.filesystem.FileMetadataSnapshot;
 import org.gradle.internal.nativeintegration.filesystem.FileSystem;
 import org.gradle.internal.serialize.SerializerRegistry;
@@ -46,7 +44,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
-import static org.gradle.api.internal.changedetection.state.streams.Publishers.create;
 import static org.gradle.internal.nativeintegration.filesystem.FileType.*;
 
 /**
@@ -58,15 +55,15 @@ public abstract class PublishingFileCollectionSnapshotter implements FileCollect
     private final FileSystem fileSystem;
     private final DirectoryFileTreeFactory directoryFileTreeFactory;
     private final FileSystemMirror fileSystemMirror;
-    private final Factory<Processor<FileDetails, FileDetails>> processorFactory;
+    private final ObservableTransformer<FileDetails, FileDetails> transformer;
 
-    public PublishingFileCollectionSnapshotter(FileHasher hasher, StringInterner stringInterner, FileSystem fileSystem, DirectoryFileTreeFactory directoryFileTreeFactory, FileSystemMirror fileSystemMirror, Factory<Processor<FileDetails, FileDetails>> processorFactory) {
+    public PublishingFileCollectionSnapshotter(FileHasher hasher, StringInterner stringInterner, FileSystem fileSystem, DirectoryFileTreeFactory directoryFileTreeFactory, FileSystemMirror fileSystemMirror, ObservableTransformer<FileDetails, FileDetails> transformer) {
         this.hasher = hasher;
         this.stringInterner = stringInterner;
         this.fileSystem = fileSystem;
         this.directoryFileTreeFactory = directoryFileTreeFactory;
         this.fileSystemMirror = fileSystemMirror;
-        this.processorFactory = processorFactory;
+        this.transformer = transformer;
     }
 
     public void registerSerializers(SerializerRegistry registry) {
@@ -86,20 +83,9 @@ public abstract class PublishingFileCollectionSnapshotter implements FileCollect
         }
 
         for (Iterable<FileDetails> rootFileTreeElement : rootFileTreeElements) {
-            SynchronousPublisher<FileDetails> publisher = create(rootFileTreeElement);
-            CollectingSubscriber<FileDetails> result = new CollectingSubscriber<FileDetails>();
-            publisher.subscribe(processorFactory.create()).map(new CleanupFileDetails()).subscribe(result);
-
-//            ap(publisher, new Function<FileDetails, SnapshottableFileDetails>() {
-//                @Override
-//                public SnapshottableFileDetails apply(FileDetails input) {
-//                    return new DefaultPhysicalFileDetails(input);
-//                }
-//            })).subscribe(result);
-//            map(publisher, new CleanupFileDetails()).subscribe(result);
-
-            result.request();
-            fileTreeElements.addAll(result.getCollection());
+            Observable<FileDetails> publisher = Observable.fromIterable(rootFileTreeElement);
+            List<FileDetails> result = publisher.compose(transformer).map(new CleanupFileDetails()).toList().blockingGet();
+            fileTreeElements.addAll(result);
         }
 
         Map<String, NormalizedFileSnapshot> snapshots = Maps.newLinkedHashMap();

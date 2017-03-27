@@ -16,38 +16,37 @@
 
 package org.gradle.api.internal.changedetection.state;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.hash.HashCode;
 import com.google.common.hash.Hashing;
 import com.google.common.io.ByteStreams;
+import io.reactivex.functions.Function;
 import org.apache.commons.io.IOUtils;
 import org.gradle.api.UncheckedIOException;
-import org.gradle.api.internal.changedetection.state.streams.AbstractProcessor;
-import org.gradle.api.internal.changedetection.state.streams.Subscriber;
 import org.gradle.api.internal.tasks.compile.ApiClassExtractor;
 import org.gradle.util.DeprecationLogger;
 import org.gradle.util.internal.Java9ClassReader;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Collections;
 
-public class HashAbiProcessor extends AbstractProcessor<SnapshottableFileDetails, FileDetails> {
+public class HashAbiFunction implements Function<SnapshottableFileDetails, Iterable<FileDetails>> {
     private final ApiClassExtractor extractor;
 
-    public HashAbiProcessor(ApiClassExtractor extractor) {
+    public HashAbiFunction(ApiClassExtractor extractor) {
         this.extractor = extractor;
     }
 
     @Override
-    public void onNext(SnapshottableFileDetails detail) {
+    public Iterable<FileDetails> apply(SnapshottableFileDetails detail) {
         HashCode signature = hashFileDetails(detail);
-        if (signature != null) {
-            FileDetails nextValue = DefaultFileDetails.copyOf(detail).withContentHash(signature);
-            for (Subscriber<? super FileDetails> subscriber : getSubscribers()) {
-                subscriber.onNext(nextValue);
-            }
+        if (signature == null) {
+            return Collections.emptyList();
         }
-
+        return ImmutableList.of(DefaultFileDetails.copyOf(detail).withContentHash(signature));
     }
+
     private HashCode hashFileDetails(SnapshottableFileDetails detail) {
         InputStream inputStream = null;
         byte[] classBytes = null;

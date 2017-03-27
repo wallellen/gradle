@@ -16,20 +16,21 @@
 
 package org.gradle.api.internal.changedetection.state;
 
+import io.reactivex.Observable;
+import io.reactivex.ObservableSource;
+import io.reactivex.ObservableTransformer;
 import org.gradle.api.internal.cache.StringInterner;
-import org.gradle.api.internal.changedetection.state.streams.Processor;
-import org.gradle.api.internal.changedetection.state.streams.Processors;
 import org.gradle.api.internal.file.collections.DirectoryFileTreeFactory;
 import org.gradle.api.internal.hash.FileHasher;
-import org.gradle.internal.Factory;
 import org.gradle.internal.nativeintegration.filesystem.FileSystem;
 
 public class PublishingGenericFileCollectionSnapshotter extends PublishingFileCollectionSnapshotter implements GenericFileCollectionSnapshotter {
     public PublishingGenericFileCollectionSnapshotter(FileHasher hasher, StringInterner stringInterner, FileSystem fileSystem, DirectoryFileTreeFactory directoryFileTreeFactory, FileSystemMirror fileSystemMirror) {
-        super(hasher, stringInterner, fileSystem, directoryFileTreeFactory, fileSystemMirror, new Factory<Processor<FileDetails, FileDetails>>() {
+        super(hasher, stringInterner, fileSystem, directoryFileTreeFactory, fileSystemMirror, new ObservableTransformer<FileDetails, FileDetails>() {
+
             @Override
-            public Processor<FileDetails, FileDetails> create() {
-                return Processors.identity();
+            public ObservableSource<FileDetails> apply(Observable<FileDetails> upstream) {
+                return upstream;
             }
         });
     }

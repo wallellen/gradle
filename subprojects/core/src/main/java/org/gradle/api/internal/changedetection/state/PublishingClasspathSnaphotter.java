@@ -16,39 +16,56 @@
 
 package org.gradle.api.internal.changedetection.state;
 
-import com.google.common.base.Function;
+import com.google.common.collect.Ordering;
 import com.google.common.hash.HashCode;
+import com.google.common.hash.Hasher;
+import com.google.common.hash.Hashing;
+import com.google.common.io.ByteStreams;
+import io.reactivex.Emitter;
+import io.reactivex.Observable;
+import io.reactivex.ObservableSource;
+import io.reactivex.ObservableTransformer;
+import io.reactivex.functions.BiConsumer;
+import io.reactivex.functions.Consumer;
+import io.reactivex.functions.Function;
+import io.reactivex.functions.Predicate;
+import io.reactivex.internal.functions.Functions;
+import io.reactivex.observables.GroupedObservable;
 import org.gradle.api.internal.cache.StringInterner;
-import org.gradle.api.internal.changedetection.state.streams.GroupedPublisher;
-import org.gradle.api.internal.changedetection.state.streams.Processor;
-import org.gradle.api.internal.changedetection.state.streams.Processors;
-import org.gradle.api.internal.changedetection.state.streams.Publisher;
-import org.gradle.api.internal.changedetection.state.streams.SortingProcessor;
 import org.gradle.api.internal.file.collections.DirectoryFileTreeFactory;
 import org.gradle.api.internal.hash.FileHasher;
-import org.gradle.api.specs.Spec;
-import org.gradle.api.specs.Specs;
 import org.gradle.cache.PersistentIndexedCache;
-import org.gradle.internal.Factory;
 import org.gradle.internal.FileUtils;
+import org.gradle.internal.IoActions;
 import org.gradle.internal.nativeintegration.filesystem.FileSystem;
 import org.gradle.internal.nativeintegration.filesystem.FileType;
 
+import java.io.ByteArrayInputStream;
 import java.util.Comparator;
+import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
-import static org.gradle.api.internal.changedetection.state.streams.Processors.compose;
 
 public class PublishingClasspathSnaphotter extends PublishingFileCollectionSnapshotter implements ClasspathSnapshotter {
-    private static final Comparator<FileDetails> FILE_DETAILS_COMPARATOR = new Comparator<FileDetails>() {
+    public static final Ordering<FileDetails> FILE_DETAILS_COMPARATOR = Ordering.from(new Comparator<FileDetails>() {
         @Override
         public int compare(FileDetails o1, FileDetails o2) {
             return o1.getPath().compareTo(o2.getPath());
         }
-    };
-    public static final Spec<FileDetails> IS_ROOT_JAR_FILE = new Spec<FileDetails>() {
+    });
+    public static final Predicate<FileDetails> IS_ROOT_JAR_FILE = new Predicate<FileDetails>() {
         @Override
-        public boolean isSatisfiedBy(FileDetails element) {
+        public boolean test(FileDetails element) {
             return FileUtils.isJar(element.getName()) && element.isRoot() && element.getType() == FileType.RegularFile;
+        }
+    };
+
+    public static final Predicate<FileDetails> IS_NOT_ROOT_JAR_FILE = new Predicate<FileDetails>() {
+        @Override
+        public boolean test(FileDetails element) throws Exception {
+            return !IS_ROOT_JAR_FILE.test(element);
         }
     };
 
@@ -58,8 +75,13 @@ public class PublishingClasspathSnaphotter extends PublishingFileCollectionSnaps
         );
     }
 
+    @Override
+    public Class<? extends FileCollectionSnapshotter> getRegisteredType() {
+        return ClasspathSnapshotter.class;
+    }
 
-    public static class ClasspathSnapshotterProcessorFactory implements Factory<Processor<FileDetails, FileDetails>> {
+
+    public static class ClasspathSnapshotterProcessorFactory implements ObservableTransformer<FileDetails, FileDetails> {
         private final PersistentIndexedCache<HashCode, HashCode> persistentCache;
         private final FileHasher hasher;
 
@@ -68,31 +90,81 @@ public class PublishingClasspathSnaphotter extends PublishingFileCollectionSnaps
             this.hasher = hasher;
         }
 
-        @Override
-        public Processor<FileDetails, FileDetails> create() {
-            Processor<FileDetails, FileDetails> start = Processors.identity();
-            Publisher<FileDetails> regularFiles = start.filter(Specs.negate(IS_ROOT_JAR_FILE));
-            Publisher<FileDetails> rootJarFiles = start.filter(IS_ROOT_JAR_FILE);
+        public Observable<FileDetails> apply(Observable<FileDetails> upstream) {
+            Observable<FileDetails> regularFiles = upstream.filter(IS_NOT_ROOT_JAR_FILE);
+            Observable<FileDetails> rootJarFiles = upstream.filter(IS_ROOT_JAR_FILE);
 
-            Processor<FileDetails, FileDetails> jarContentsHashed =
-                rootJarFiles.subscribe(cache(hashZipContents(hasher)));
-            return compose(start, regularFiles.join(jarContentsHashed).subscribe(sort()));
-        }
-
-        private <S extends FileDetails> Processor<S, FileDetails> cache(Processor<S, FileDetails> processor) {
-            return new CachingProcessor<S>(persistentCache, processor);
+            Observable<FileDetails> jarContentsHashed =
+                rootJarFiles.compose(hashZipContents(hasher));
+            return Observable.concat(regularFiles, jarContentsHashed);
         }
     }
 
-    public static Processor<FileDetails, FileDetails> hashZipContents(FileHasher hasher) {
-        Processor<FileDetails, FileDetails> start = Processors.identity();
-        Publisher<FileDetails> end = expandZip(hasher, start).flatMap(new CombineZipHash());
-        return compose(start, end);
+    public static ObservableTransformer<FileDetails, FileDetails> hashZipContents(final FileHasher hasher) {
+        return new ObservableTransformer<FileDetails, FileDetails>() {
+            @Override
+            public ObservableSource<FileDetails> apply(Observable<FileDetails> upstream) {
+                Observable<GroupedObservable<SnapshottableFileDetails, SnapshottableFileDetails>> expanded = upstream.map(new PhysicalSnapshot()).flatMap(expandZip(hasher));
+                return expanded.flatMap(sortAndCombineHashes());
+            }
+        };
     }
 
-    @Override
-    public Class<? extends FileCollectionSnapshotter> getRegisteredType() {
-        return ClasspathSnapshotter.class;
+    private static Function<? super GroupedObservable<SnapshottableFileDetails, SnapshottableFileDetails>, Observable<FileDetails>> sortAndCombineHashes() {
+        return new Function<GroupedObservable<SnapshottableFileDetails, SnapshottableFileDetails>, Observable<FileDetails>>() {
+            @Override
+            public Observable<FileDetails> apply(GroupedObservable<SnapshottableFileDetails, SnapshottableFileDetails> groupedObservable) throws Exception {
+                return groupedObservable.sorted(FILE_DETAILS_COMPARATOR).toList().map(combineHashes(groupedObservable.getKey())).toObservable();
+            }
+        };
+    }
+
+    public static Function<? super List<? extends FileDetails>, FileDetails> combineHashes(final SnapshottableFileDetails key) {
+        return new Function<List<? extends FileDetails>, FileDetails>() {
+            @Override
+            public FileDetails apply(List<? extends FileDetails> snapshottableFileDetails) throws Exception {
+                HashCode newHash = hash(snapshottableFileDetails);
+                return key.withContentHash(newHash);
+            }
+
+            private HashCode hash(Iterable<? extends FileDetails> details) {
+                Hasher hasher = Hashing.md5().newHasher();
+                for (FileDetails detail : details) {
+                    hasher.putBytes(detail.getContent().getContentMd5().asBytes());
+                }
+                return hasher.hash();
+            }
+        };
+    }
+
+    private static <T extends FileDetails> Function<List<T>, List<T>> sort() {
+        return new Function<List<T>, List<T>>() {
+            @Override
+            public List<T> apply(List<T> ts) throws Exception {
+                return FILE_DETAILS_COMPARATOR.immutableSortedCopy(ts);
+            }
+        };
+    }
+
+    public static Function<? super SnapshottableFileDetails, Observable<GroupedObservable<SnapshottableFileDetails, SnapshottableFileDetails>>> expandZip(final FileHasher hasher) {
+        return new Function<SnapshottableFileDetails, Observable<GroupedObservable<SnapshottableFileDetails, SnapshottableFileDetails>>>() {
+            @Override
+            public Observable<GroupedObservable<SnapshottableFileDetails, SnapshottableFileDetails>> apply(final SnapshottableFileDetails fileDetails) throws Exception {
+                return Observable.generate(
+                    new Callable<ExpandZipState>() {
+                        @Override
+                        public ExpandZipState call() throws Exception {
+                            return new ExpandZipState(fileDetails, hasher);
+                        }
+                    },
+                    new ExpandZip(), new Consumer<ExpandZipState>() {
+                        @Override
+                        public void accept(ExpandZipState expandZipState) throws Exception {
+                            IoActions.closeQuietly(expandZipState.getInputStream());
+                        }
+                    }).groupBy(Functions.justFunction(fileDetails));
+            }
+        };
     }
 
     public static class PhysicalSnapshot implements Function<FileDetails, SnapshottableFileDetails> {
@@ -102,21 +174,47 @@ public class PublishingClasspathSnaphotter extends PublishingFileCollectionSnaps
         }
     }
 
-    public static Publisher<GroupedPublisher<SnapshottableFileDetails, SnapshottableFileDetails>> expandZip(FileHasher hasher, Publisher<FileDetails> publisher) {
-        return publisher.map(new PhysicalSnapshot()).subscribe(new ExpandZipProcessor(hasher));
-    }
+    private static class ExpandZipState {
+        private final FileHasher hasher;
+        private final ZipInputStream inputStream;
 
-    public static class CombineZipHash implements Function<GroupedPublisher<SnapshottableFileDetails, SnapshottableFileDetails>, Publisher<FileDetails>> {
-        @Override
-        public Publisher<FileDetails> apply(GroupedPublisher<SnapshottableFileDetails, SnapshottableFileDetails> input) {
-            return input.map(cleanup()).subscribe(sort()).subscribe(new CombineHashes(input.getKey()));
+        public ExpandZipState(SnapshottableFileDetails zipFile, FileHasher hasher) {
+            this.hasher = hasher;
+            this.inputStream = new ZipInputStream(zipFile.open());
+        }
+        public FileHasher getHasher() {
+            return hasher;
+        }
+
+        public ZipInputStream getInputStream() {
+            return inputStream;
         }
     }
 
-    public static PublishingFileCollectionSnapshotter.CleanupFileDetails cleanup() {
-        return new CleanupFileDetails();
-    }
-    public static SortingProcessor<FileDetails> sort() {
-        return new SortingProcessor<FileDetails>(FILE_DETAILS_COMPARATOR);
+    private static class ExpandZip implements BiConsumer<ExpandZipState, Emitter<SnapshottableFileDetails>> {
+        @Override
+        public void accept(ExpandZipState state, Emitter<SnapshottableFileDetails> emitter) throws Exception {
+            try {
+                ZipEntry zipEntry;
+                ZipInputStream zipInputStream = state.getInputStream();
+                while ((zipEntry = zipInputStream.getNextEntry()) != null) {
+                    if (zipEntry.isDirectory()) {
+                        continue;
+                    }
+                    break;
+                }
+                if (zipEntry == null) {
+                    emitter.onComplete();
+                    return;
+                }
+                byte[] contents = ByteStreams.toByteArray(zipInputStream);
+                emitter.onNext(
+                    new ZipSnapshottableFileDetails(zipEntry, contents, state.getHasher().hash(new ByteArrayInputStream(contents)))
+                );
+            } catch (Exception e) {
+                // Other Exceptions can be thrown by invalid zips, too. See https://github.com/gradle/gradle/issues/1581.
+                emitter.onError(e);
+            }
+        }
     }
 }

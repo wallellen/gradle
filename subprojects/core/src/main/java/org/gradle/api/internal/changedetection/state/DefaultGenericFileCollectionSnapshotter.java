@@ -21,9 +21,9 @@ import org.gradle.api.internal.file.collections.DirectoryFileTreeFactory;
 import org.gradle.api.internal.hash.FileHasher;
 import org.gradle.internal.nativeintegration.filesystem.FileSystem;
 
-public class DefaultGenericFileCollectionSnapshotter extends ConfigurableFileCollectionSnapshotter implements GenericFileCollectionSnapshotter {
+public class DefaultGenericFileCollectionSnapshotter extends AbstractFileCollectionSnapshotter implements GenericFileCollectionSnapshotter {
     public DefaultGenericFileCollectionSnapshotter(FileHasher hasher, StringInterner stringInterner, FileSystem fileSystem, DirectoryFileTreeFactory directoryFileTreeFactory, FileSystemMirror fileSystemMirror) {
-        super(hasher, stringInterner, fileSystem, directoryFileTreeFactory, fileSystemMirror, new EndSnapshotterFilter());
+        super(hasher, stringInterner, fileSystem, directoryFileTreeFactory, fileSystemMirror);
     }
 
     @Override
