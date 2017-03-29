@@ -25,7 +25,9 @@ import io.reactivex.Emitter;
 import io.reactivex.Observable;
 import io.reactivex.ObservableSource;
 import io.reactivex.ObservableTransformer;
+import io.reactivex.Single;
 import io.reactivex.functions.BiConsumer;
+import io.reactivex.functions.BiFunction;
 import io.reactivex.functions.Consumer;
 import io.reactivex.functions.Function;
 import io.reactivex.functions.Predicate;
@@ -46,6 +48,8 @@ import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+
+import static io.reactivex.internal.functions.Functions.justFunction;
 
 
 public class PublishingClasspathSnaphotter extends PublishingFileCollectionSnapshotter implements ClasspathSnapshotter {
@@ -82,39 +86,89 @@ public class PublishingClasspathSnaphotter extends PublishingFileCollectionSnaps
 
 
     public static class ClasspathSnapshotterProcessorFactory implements ObservableTransformer<FileDetails, FileDetails> {
-        private final PersistentIndexedCache<HashCode, HashCode> persistentCache;
-        private final FileHasher hasher;
+        private final ObservableTransformer<FileDetails, FileDetails> hashZipContents;
 
         public ClasspathSnapshotterProcessorFactory(PersistentIndexedCache<HashCode, HashCode> persistentCache, FileHasher hasher) {
-            this.persistentCache = persistentCache;
-            this.hasher = hasher;
+            hashZipContents = hashZipContents(PublishingClasspathSnaphotter.<FileDetails, SnapshottableFileDetails>identity(), hasher, persistentCache);
         }
 
         public Observable<FileDetails> apply(Observable<FileDetails> upstream) {
             Observable<FileDetails> regularFiles = upstream.filter(IS_NOT_ROOT_JAR_FILE);
             Observable<FileDetails> rootJarFiles = upstream.filter(IS_ROOT_JAR_FILE);
 
-            Observable<FileDetails> jarContentsHashed =
-                rootJarFiles.compose(hashZipContents(hasher));
+            Observable<FileDetails> jarContentsHashed = rootJarFiles.compose(hashZipContents);
             return Observable.concat(regularFiles, jarContentsHashed);
         }
     }
 
-    public static ObservableTransformer<FileDetails, FileDetails> hashZipContents(final FileHasher hasher) {
+    private static final ObservableTransformer<Object, Object> IDENTITY = new ObservableTransformer<Object, Object>() {
+        @Override
+        public ObservableSource<Object> apply(Observable<Object> upstream) {
+            return upstream;
+        }
+    };
+
+    public static <T, S extends T> ObservableTransformer<S, T> identity() {
+        //noinspection unchecked
+        return (ObservableTransformer<S, T>) IDENTITY;
+    }
+
+    public static ObservableTransformer<FileDetails, FileDetails> hashZipContents(final ObservableTransformer<SnapshottableFileDetails, FileDetails> transformExpandedZip, final FileHasher hasher, final PersistentIndexedCache<HashCode, HashCode> persistentCache) {
         return new ObservableTransformer<FileDetails, FileDetails>() {
             @Override
             public ObservableSource<FileDetails> apply(Observable<FileDetails> upstream) {
-                Observable<GroupedObservable<SnapshottableFileDetails, SnapshottableFileDetails>> expanded = upstream.map(new PhysicalSnapshot()).flatMap(expandZip(hasher));
-                return expanded.flatMap(sortAndCombineHashes());
+                Observable<GroupedObservable<SnapshottableFileDetails, FileDetails>> expanded = upstream.map(new PhysicalSnapshot()).flatMap(expandZip(hasher)).compose(
+                    lift(transformExpandedZip)
+                );
+
+                Observable<Observable<FileDetails>> combinedHash = expanded
+                    .map(sortAndCombineHashes(persistentCache));
+                Observable<Observable<FileDetails>> hashFromCache = upstream.map(new LoadFromCache(persistentCache));
+                Observable<Single<FileDetails>> fromCacheOrCalculated = Observable.zip(hashFromCache, combinedHash, new BiFunction<Observable<FileDetails>, Observable<FileDetails>, Single<FileDetails>>() {
+                    @Override
+                    public Single<FileDetails> apply(Observable<FileDetails> cached, Observable<FileDetails> nonCached) throws Exception {
+                        return Observable.concat(cached, nonCached).firstOrError();
+                    }
+                });
+                return fromCacheOrCalculated.flatMapSingle(Functions.<Single<FileDetails>>identity());
             }
         };
     }
 
-    private static Function<? super GroupedObservable<SnapshottableFileDetails, SnapshottableFileDetails>, Observable<FileDetails>> sortAndCombineHashes() {
-        return new Function<GroupedObservable<SnapshottableFileDetails, SnapshottableFileDetails>, Observable<FileDetails>>() {
+    public static ObservableTransformer<
+        GroupedObservable<SnapshottableFileDetails, SnapshottableFileDetails>,
+        GroupedObservable<SnapshottableFileDetails, FileDetails>>
+    lift(final ObservableTransformer<SnapshottableFileDetails, FileDetails> transformer) {
+        return new ObservableTransformer<GroupedObservable<SnapshottableFileDetails, SnapshottableFileDetails>, GroupedObservable<SnapshottableFileDetails, FileDetails>>() {
             @Override
-            public Observable<FileDetails> apply(GroupedObservable<SnapshottableFileDetails, SnapshottableFileDetails> groupedObservable) throws Exception {
-                return groupedObservable.sorted(FILE_DETAILS_COMPARATOR).toList().map(combineHashes(groupedObservable.getKey())).toObservable();
+            public ObservableSource<GroupedObservable<SnapshottableFileDetails, FileDetails>> apply(Observable<GroupedObservable<SnapshottableFileDetails, SnapshottableFileDetails>> upstream) {
+                return upstream.flatMap(new Function<GroupedObservable<SnapshottableFileDetails, SnapshottableFileDetails>, Observable<GroupedObservable<SnapshottableFileDetails, FileDetails>>>() {
+                    @Override
+                    public Observable<GroupedObservable<SnapshottableFileDetails, FileDetails>> apply(GroupedObservable<SnapshottableFileDetails, SnapshottableFileDetails> groupedObservable) throws Exception {
+                        return groupedObservable.compose(transformer).groupBy(justFunction(groupedObservable.getKey()));
+                    }
+                });
+            }
+        };
+    }
+
+
+    private static Function<? super FileDetails, ? extends FileDetails> storeInCache(final PersistentIndexedCache<HashCode, HashCode> persistentCache, final SnapshottableFileDetails originalFile) {
+        return new Function<FileDetails, FileDetails>() {
+            @Override
+            public FileDetails apply(FileDetails fileDetails) throws Exception {
+                persistentCache.put(originalFile.getContent().getContentMd5(), fileDetails.getContent().getContentMd5());
+                return fileDetails;
+            }
+        };
+    }
+
+    private static Function<? super GroupedObservable<SnapshottableFileDetails, ? extends FileDetails>, Observable<FileDetails>> sortAndCombineHashes(final PersistentIndexedCache<HashCode, HashCode> persistentCache) {
+        return new Function<GroupedObservable<SnapshottableFileDetails, ? extends FileDetails>, Observable<FileDetails>>() {
+            @Override
+            public Observable<FileDetails> apply(GroupedObservable<SnapshottableFileDetails, ? extends FileDetails> groupedObservable) throws Exception {
+                return groupedObservable.sorted(FILE_DETAILS_COMPARATOR).toList().map(combineHashes(groupedObservable.getKey()))
+                    .map(storeInCache(persistentCache, groupedObservable.getKey())).toObservable();
             }
         };
     }
@@ -182,6 +236,7 @@ public class PublishingClasspathSnaphotter extends PublishingFileCollectionSnaps
             this.hasher = hasher;
             this.inputStream = new ZipInputStream(zipFile.open());
         }
+
         public FileHasher getHasher() {
             return hasher;
         }
@@ -215,6 +270,23 @@ public class PublishingClasspathSnaphotter extends PublishingFileCollectionSnaps
                 // Other Exceptions can be thrown by invalid zips, too. See https://github.com/gradle/gradle/issues/1581.
                 emitter.onError(e);
             }
+        }
+    }
+
+    private static class LoadFromCache implements Function<FileDetails, Observable<FileDetails>> {
+        private final PersistentIndexedCache<HashCode, HashCode> signatureCache;
+
+        public LoadFromCache(PersistentIndexedCache<HashCode, HashCode> signatureCache) {
+            this.signatureCache = signatureCache;
+        }
+
+        @Override
+        public Observable<FileDetails> apply(FileDetails fileDetails) throws Exception {
+            HashCode fromCache = signatureCache.get(fileDetails.getContent().getContentMd5());
+            if (fromCache != null) {
+                return Observable.fromArray(fileDetails.withContentHash(fromCache));
+            }
+            return Observable.empty();
         }
     }
 }

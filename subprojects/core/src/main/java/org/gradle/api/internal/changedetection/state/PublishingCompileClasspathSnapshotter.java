@@ -21,7 +21,6 @@ import io.reactivex.Observable;
 import io.reactivex.ObservableSource;
 import io.reactivex.ObservableTransformer;
 import io.reactivex.functions.Predicate;
-import io.reactivex.observables.GroupedObservable;
 import org.gradle.api.internal.cache.StringInterner;
 import org.gradle.api.internal.file.collections.DirectoryFileTreeFactory;
 import org.gradle.api.internal.hash.FileHasher;
@@ -39,7 +38,7 @@ public class PublishingCompileClasspathSnapshotter extends PublishingFileCollect
     public static final Predicate<FileDetails> IS_CLASS_FILE = new Predicate<FileDetails>() {
         @Override
         public boolean test(FileDetails element) {
-            return FileUtils.isClass(element.getName()) &&  element.getType() == FileType.RegularFile;
+            return FileUtils.isClass(element.getName()) && element.getType() == FileType.RegularFile;
         }
     };
 
@@ -49,57 +48,34 @@ public class PublishingCompileClasspathSnapshotter extends PublishingFileCollect
     }
 
     private static class CompileClasspathSnapshotterProcessor implements ObservableTransformer<FileDetails, FileDetails> {
-        private final FileHasher hasher;
-        private final PersistentIndexedCache<HashCode, HashCode> persistentCache;
-        private final PersistentIndexedCache<HashCode, HashCode> compileSignatureCache;
+        private final ObservableTransformer<FileDetails, FileDetails> hashZipContents;
+        private final HashClassSignaturesTransformer hashClassSignaturesTransformer;
+        private final ObservableTransformer<FileDetails, FileDetails> hashSignatures;
 
         public CompileClasspathSnapshotterProcessor(FileHasher hasher, PersistentIndexedCache<HashCode, HashCode> runtimeSignatureCache, PersistentIndexedCache<HashCode, HashCode> compileSignatureCache) {
-            this.hasher = hasher;
-            this.persistentCache = runtimeSignatureCache;
-            this.compileSignatureCache = compileSignatureCache;
+            hashZipContents = hashZipContents(PublishingClasspathSnaphotter.<FileDetails, SnapshottableFileDetails>identity(), hasher, runtimeSignatureCache);
+            hashClassSignaturesTransformer = new HashClassSignaturesTransformer();
+            hashSignatures = hashZipContents(hashClassSignaturesTransformer, hasher, compileSignatureCache);
         }
 
         @Override
         public Observable<FileDetails> apply(Observable<FileDetails> input) {
-            HashClassSignaturesTransformer hashClassSignaturesTransformer = new HashClassSignaturesTransformer(compileSignatureCache);
             Observable<FileDetails> classFiles = input.filter(IS_CLASS_FILE)
                 .map(new PhysicalSnapshot())
                 .compose(hashClassSignaturesTransformer);
             Observable<FileDetails> rootJarFiles = input.filter(IS_ROOT_JAR_FILE);
 
             Observable<FileDetails> jarContentsHashed =
-                rootJarFiles.compose(hashZipContents(hasher)).compose(hashSignaturesInJar(hashClassSignaturesTransformer));
+                rootJarFiles
+                    .compose(hashZipContents)
+                    .compose(hashSignatures);
 
             return Observable.concat(classFiles, jarContentsHashed);
-        }
-
-        private ObservableTransformer<? super FileDetails, ? extends FileDetails> hashSignaturesInJar(final HashClassSignaturesTransformer hashClassSignaturesTransformer) {
-            return new ObservableTransformer<FileDetails, FileDetails>() {
-                @Override
-                public ObservableSource<FileDetails> apply(Observable<FileDetails> upstream) {
-                    Observable<GroupedObservable<SnapshottableFileDetails, SnapshottableFileDetails>> expanded = upstream.map(new PhysicalSnapshot()).flatMap(expandZip(hasher));
-                    return expanded.flatMap(hashClassSignaturesInJar(hashClassSignaturesTransformer));
-                }
-            };
-        }
-
-        private io.reactivex.functions.Function<? super GroupedObservable<SnapshottableFileDetails, SnapshottableFileDetails>, Observable<FileDetails>> hashClassSignaturesInJar(final HashClassSignaturesTransformer hashClassSignaturesTransformer) {
-            return new io.reactivex.functions.Function<GroupedObservable<SnapshottableFileDetails, SnapshottableFileDetails>, Observable<FileDetails>>() {
-                @Override
-                public Observable<FileDetails> apply(GroupedObservable<SnapshottableFileDetails, SnapshottableFileDetails> groupedObservable) throws Exception {
-                    return groupedObservable.compose(hashClassSignaturesTransformer).toList().map(combineHashes(groupedObservable.getKey())).toObservable();
-                }
-            };
         }
     }
 
     public static class HashClassSignaturesTransformer implements ObservableTransformer<SnapshottableFileDetails, FileDetails> {
-        private final PersistentIndexedCache<HashCode, HashCode> signatureCache;
         private final ApiClassExtractor extractor = new ApiClassExtractor(Collections.<String>emptySet());
-
-        private HashClassSignaturesTransformer(PersistentIndexedCache<HashCode, HashCode> signatureCache) {
-            this.signatureCache = signatureCache;
-        }
 
         @Override
         public ObservableSource<FileDetails> apply(Observable<SnapshottableFileDetails> upstream) {
