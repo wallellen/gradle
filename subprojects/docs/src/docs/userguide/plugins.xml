@@ -141,9 +141,9 @@
             <para>
                 To apply a core plugin, the short name can be used:
             </para>
-            <sample id="useJavaPluginDSL" dir="plugins/dsl" title="Applying a core plugin">
-                <sourcefile file="build.gradle" snippet="use-plugin"/>
-            </sample>
+            <!--<sample id="useJavaPluginDSL" dir="plugins/dsl" title="Applying a core plugin">-->
+                <!--<sourcefile file="build.gradle" snippet="use-plugin"/>-->
+            <!--</sample>-->
             <para>
                 To apply a community plugin from the portal, the fully qualified plugin id must be used:
             </para>
