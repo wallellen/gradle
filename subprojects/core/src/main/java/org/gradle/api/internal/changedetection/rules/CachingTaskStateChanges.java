@@ -33,6 +33,7 @@ public class CachingTaskStateChanges implements TaskStateChanges {
     private final int maxCachedChanges;
     private Iterator<TaskStateChange> delegateIterator;
     boolean overrun;
+    private boolean hasSnapshotAfter;
 
     public CachingTaskStateChanges(int maxCachedChanges, TaskStateChanges delegate) {
         this.maxCachedChanges = maxCachedChanges;
@@ -80,7 +81,12 @@ public class CachingTaskStateChanges implements TaskStateChanges {
         overrun = false;
     }
 
-    public void snapshotAfterTask() {
-        delegate.snapshotAfterTask();
+    public boolean snapshotAfterTask() {
+        if (!hasSnapshotAfter) {
+            hasSnapshotAfter = true;
+            return delegate.snapshotAfterTask();
+        }
+        // TODO:
+        return false;
     }
 }

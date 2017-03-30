@@ -67,9 +67,10 @@ public class SkipCachedTaskExecuter implements TaskExecuter {
         final TaskOutputsInternal taskOutputs = task.getOutputs();
         TaskOutputCachingBuildCacheKey cacheKey = context.getBuildCacheKey();
         boolean taskOutputCachingEnabled = state.getTaskOutputCaching().isEnabled();
+        TaskArtifactState taskState = context.getTaskArtifactState();
+
         if (taskOutputCachingEnabled) {
             if (cacheKey.isValid()) {
-                TaskArtifactState taskState = context.getTaskArtifactState();
                 if (taskState.isAllowedToUseCachedResults()) {
                     boolean found = buildCache.load(cacheKey, new BuildCacheEntryReader() {
                         @Override
@@ -94,7 +95,7 @@ public class SkipCachedTaskExecuter implements TaskExecuter {
         delegate.execute(task, state, context);
 
         if (taskOutputCachingEnabled) {
-            if (cacheKey.isValid()) {
+            if (cacheKey.isValid() && !taskState.isDetectOverlappingOutputs()) {
                 if (state.getFailure() == null) {
                     buildCache.store(cacheKey, new BuildCacheEntryWriter() {
                         @Override

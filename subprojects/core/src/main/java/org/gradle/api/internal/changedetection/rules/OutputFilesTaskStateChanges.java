@@ -26,6 +26,7 @@ import org.gradle.api.internal.changedetection.state.OutputFilesSnapshotter;
 import org.gradle.api.internal.changedetection.state.TaskExecution;
 
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class OutputFilesTaskStateChanges extends AbstractNamedFileSnapshotTaskStateChanges {
     private final OutputFilesSnapshotter outputSnapshotter;
@@ -41,18 +42,21 @@ public class OutputFilesTaskStateChanges extends AbstractNamedFileSnapshotTaskSt
     }
 
     @Override
-    public void saveCurrent() {
+    public boolean snapshotAfterTask() {
         final ImmutableSortedMap<String, FileCollectionSnapshot> outputFilesAfter = buildSnapshots(getTaskName(), getSnapshotterRegistry(), getTitle(), getFileProperties());
 
+        final AtomicBoolean crappy = new AtomicBoolean(false);
         ImmutableSortedMap<String, FileCollectionSnapshot> results = ImmutableSortedMap.copyOfSorted(Maps.transformEntries(getCurrent(), new Maps.EntryTransformer<String, FileCollectionSnapshot, FileCollectionSnapshot>() {
             @Override
             public FileCollectionSnapshot transformEntry(String propertyName, FileCollectionSnapshot beforeExecution) {
                 FileCollectionSnapshot afterExecution = outputFilesAfter.get(propertyName);
                 FileCollectionSnapshot afterPreviousExecution = getSnapshotAfterPreviousExecution(propertyName);
-                return outputSnapshotter.createOutputSnapshot(afterPreviousExecution, beforeExecution, afterExecution);
+                return outputSnapshotter.createOutputSnapshot(afterPreviousExecution, beforeExecution, afterExecution, crappy);
             }
         }));
         current.setOutputFilesSnapshot(results);
+
+        return crappy.get();
     }
 
     private FileCollectionSnapshot getSnapshotAfterPreviousExecution(String propertyName) {

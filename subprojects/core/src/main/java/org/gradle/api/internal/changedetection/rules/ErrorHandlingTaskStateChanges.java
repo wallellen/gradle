@@ -32,8 +32,8 @@ public class ErrorHandlingTaskStateChanges implements TaskStateChanges {
     }
 
     @Override
-    public void snapshotAfterTask() {
-        delegate.snapshotAfterTask();
+    public boolean snapshotAfterTask() {
+        return delegate.snapshotAfterTask();
     }
 
     @Override

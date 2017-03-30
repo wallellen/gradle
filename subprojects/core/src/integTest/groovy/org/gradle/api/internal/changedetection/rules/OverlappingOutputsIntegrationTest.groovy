@@ -254,8 +254,6 @@ class OverlappingOutputsIntegrationTest extends AbstractIntegrationSpec implemen
         when:
         withBuildCache().succeeds("A", "cleanB", "B")
         then:
-        file("build/A.txt").assertExists()
-        file("build/B.txt").assertExists()
         // Both tasks can be cached
         listCacheFiles().size() == 2
 

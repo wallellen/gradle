@@ -36,7 +36,8 @@ public class InputFilesTaskStateChanges extends AbstractNamedFileSnapshotTaskSta
     }
 
     @Override
-    public void saveCurrent() {
-        // Inputs have already been saved in constructor
+    public boolean snapshotAfterTask() {
+        // do nothing
+        return false;
     }
 }

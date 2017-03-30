@@ -47,6 +47,12 @@ class NoHistoryArtifactState implements TaskArtifactState, TaskExecutionHistory 
         return DefaultTaskOutputCachingBuildCacheKeyBuilder.NO_CACHE_KEY;
     }
 
+    @Override
+    public boolean isDetectOverlappingOutputs() {
+        // TODO: Is this correct?  This should probably check the outputs somehow too?
+        return false;
+    }
+
     public TaskExecutionHistory getExecutionHistory() {
         return this;
     }

@@ -20,6 +20,7 @@ import com.google.common.collect.ImmutableMap;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Takes a snapshot of the output files of a task.
@@ -31,7 +32,8 @@ public class OutputFilesSnapshotter {
     public FileCollectionSnapshot createOutputSnapshot(
         FileCollectionSnapshot afterPreviousExecution,
         FileCollectionSnapshot beforeExecution,
-        FileCollectionSnapshot afterExecution
+        FileCollectionSnapshot afterExecution,
+        AtomicBoolean crappy
     ) {
         FileCollectionSnapshot filesSnapshot;
         Map<String, NormalizedFileSnapshot> afterSnapshots = afterExecution.getSnapshots();
@@ -47,6 +49,8 @@ public class OutputFilesSnapshotter {
                 if (isOutputEntry(path, fileSnapshot, beforeSnapshots, afterPreviousSnapshots)) {
                     outputEntries.put(entry.getKey(), fileSnapshot);
                     newEntryCount++;
+                } else {
+                    crappy.set(true);
                 }
             }
             // Are all files snapshot after execution accounted for as new entries?

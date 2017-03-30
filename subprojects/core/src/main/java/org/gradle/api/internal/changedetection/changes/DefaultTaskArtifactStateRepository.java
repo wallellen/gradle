@@ -161,6 +161,10 @@ public class DefaultTaskArtifactStateRepository implements TaskArtifactStateRepo
             history.update();
         }
 
+        public boolean isDetectOverlappingOutputs() {
+            return getStates().getAllTaskChanges().snapshotAfterTask();
+        }
+
         public void finished() {
         }
 

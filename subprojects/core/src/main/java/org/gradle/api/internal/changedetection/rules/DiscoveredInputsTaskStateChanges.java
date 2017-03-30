@@ -75,9 +75,10 @@ public class DiscoveredInputsTaskStateChanges implements TaskStateChanges, Disco
     }
 
     @Override
-    public void snapshotAfterTask() {
+    public boolean snapshotAfterTask() {
         FileCollectionSnapshot discoveredFilesSnapshot = createSnapshot(snapshotter, fileCollectionFactory.fixed("Discovered input files", discoveredFiles));
         current.setDiscoveredInputFilesSnapshot(discoveredFilesSnapshot);
+        return false;
     }
 
     @Override

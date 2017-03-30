@@ -44,6 +44,8 @@ public interface TaskArtifactState {
      */
     TaskOutputCachingBuildCacheKey calculateCacheKey();
 
+    boolean isDetectOverlappingOutputs();
+
     /**
      * Called before the task is to be executed. Note that {@link #isUpToDate(java.util.Collection)} may not necessarily have been called.
      */

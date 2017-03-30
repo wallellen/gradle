@@ -89,6 +89,11 @@ public class ShortCircuitTaskArtifactStateRepository implements TaskArtifactStat
             return delegate.calculateCacheKey();
         }
 
+        @Override
+        public boolean isDetectOverlappingOutputs() {
+            return delegate.isDetectOverlappingOutputs();
+        }
+
         public TaskExecutionHistory getExecutionHistory() {
             return delegate.getExecutionHistory();
         }
