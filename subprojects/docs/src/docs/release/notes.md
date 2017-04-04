@@ -152,6 +152,7 @@ The following are the newly deprecated items in this Gradle release. If you have
 - Moved classes `RhinoWorkerHandleFactory` and `RhinoWorkerUtils` into internal package.
 - Removed `RhinoWorker`.
 - Removed constructor `EarPluginConvention(Instantiator)`.
+- The `ConfigurableReport` method `setDestination(Object)` is removed.
 
 The deprecated `jetty` plugin has been removed. We recommend using the [Gretty plugin](https://github.com/akhikhl/gretty) for developing Java web applications.
 
