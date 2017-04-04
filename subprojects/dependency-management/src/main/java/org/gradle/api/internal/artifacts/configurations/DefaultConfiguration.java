@@ -92,6 +92,7 @@ import org.gradle.internal.component.model.ComponentResolveMetadata;
 import org.gradle.internal.event.ListenerBroadcast;
 import org.gradle.internal.event.ListenerManager;
 import org.gradle.internal.operations.BuildOperationContext;
+import org.gradle.internal.progress.BuildOperationDetails;
 import org.gradle.internal.progress.BuildOperationExecutor;
 import org.gradle.internal.reflect.Instantiator;
 import org.gradle.internal.typeconversion.NotationParser;
@@ -174,6 +175,7 @@ public class DefaultConfiguration extends AbstractFileCollection implements Conf
     private final ImmutableAttributesFactory attributesFactory;
     private final FileCollection intrinsicFiles;
 
+    private final BuildOperationDetails resolveAllBuildOperationDetails;
     String displayName;
 
     public DefaultConfiguration(Path identityPath, Path path, String name,
@@ -250,6 +252,7 @@ public class DefaultConfiguration extends AbstractFileCollection implements Conf
         }, inheritedArtifacts, fileCollectionFactory);
 
         outgoing = instantiator.newInstance(DefaultConfigurationPublications.class, artifacts, allArtifacts, configurationAttributes, instantiator, artifactNotationParser, fileCollectionFactory, attributesFactory);
+        resolveAllBuildOperationDetails = computeResolveAllBuildOperationDetails();
     }
 
     private static Action<Void> validateMutationType(final MutationValidator mutationValidator, final MutationType type) {
@@ -259,6 +262,11 @@ public class DefaultConfiguration extends AbstractFileCollection implements Conf
                 mutationValidator.validateMutation(type);
             }
         };
+    }
+
+    private BuildOperationDetails computeResolveAllBuildOperationDetails() {
+        String name = getPath();
+        return BuildOperationDetails.displayName("Resolve artifacts " + name).name(name).build();
     }
 
     public String getName() {
@@ -402,7 +410,14 @@ public class DefaultConfiguration extends AbstractFileCollection implements Conf
     }
 
     public Set<File> getFiles() {
-        return intrinsicFiles.getFiles();
+        final List<Set<File>> result = new ArrayList<Set<File>>(1);
+        buildOperationExecutor.run(resolveAllBuildOperationDetails, new Action<BuildOperationContext>() {
+            @Override
+            public void execute(BuildOperationContext buildOperationContext) {
+                result.add(intrinsicFiles.getFiles());
+            }
+        });
+        return result.get(0);
     }
 
     public Set<File> files(Dependency... dependencies) {
