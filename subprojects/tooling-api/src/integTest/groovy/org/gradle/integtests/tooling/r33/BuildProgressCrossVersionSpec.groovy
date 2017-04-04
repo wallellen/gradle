@@ -203,14 +203,12 @@ class BuildProgressCrossVersionSpec extends ToolingApiSpecification {
         def compileTestJava = events.operation("Task :compileTestJava")
         def test = events.operation("Task :test")
 
-        def compileClasspath = events.operation("Resolve dependencies :compileClasspath")
-        compileClasspath.parent == compileJava
+        compileJava.descendant("Resolve dependencies :compileClasspath")
 
-        def testCompileClasspath = events.operation("Resolve dependencies :testCompileClasspath")
-        testCompileClasspath.parent == compileTestJava
+        compileTestJava.descendant("Resolve dependencies :testCompileClasspath")
 
         def testRuntimeClasspath = events.operation("Resolve dependencies :testRuntime", "Resolve dependencies :testRuntimeClasspath")
-        testRuntimeClasspath.parent == test
+        testRuntimeClasspath.parent == test || testRuntimeClasspath.parent.parent == test
     }
 
     def "generates events for failed dependency resolution"() {
@@ -349,8 +347,8 @@ class BuildProgressCrossVersionSpec extends ToolingApiSpecification {
         buildSrcCompileJava.descriptor.name == ':buildSrc:compileJava'
         buildSrcCompileJava.descriptor.taskPath == ':buildSrc:compileJava'
 
-        buildSrcTasks.child("Task :buildSrc:a:compileJava").child("Resolve dependencies :buildSrc:a:compileClasspath")
-        buildSrcTasks.child("Task :buildSrc:b:compileJava").child("Resolve dependencies :buildSrc:b:compileClasspath")
+        buildSrcTasks.child("Task :buildSrc:a:compileJava").descendant("Resolve dependencies :buildSrc:a:compileClasspath")
+        buildSrcTasks.child("Task :buildSrc:b:compileJava").descendant("Resolve dependencies :buildSrc:b:compileClasspath")
 
         buildSrcTasks.child("Task :buildSrc:a:test").descendant("Gradle Test Run :buildSrc:a:test")
         buildSrcTasks.child("Task :buildSrc:b:test")
